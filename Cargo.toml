@@ -1,0 +1,14 @@
+[package]
+name = "hash_visualiser"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "hash_visualiser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hash_visualiser"
+path = "src/main.rs"
+
+[dependencies]
