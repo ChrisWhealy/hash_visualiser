@@ -1,14 +1,14 @@
-(* ============================================================
+(* =====================================================================================================================
    Hash Visualiser DSL — EBNF Grammar
-   Version 0.1  (PoC baseline)
+   Version: 0.1  (PoC baseline)
    Date: 2026-06-08
+   Author: Chris Whealy <chris@whealy.com>
 
    Notation
    --------
    rule  ::=  definition ;       — rule definition (terminates with ;)
    A | B                         — alternation — A or B
-   A B                           — concatenation (whitespace between tokens
-                                   is insignificant and not shown)
+   A B                           — concatenation (whitespace between tokens is insignificant and not shown)
    { A }                         — repetition — zero or more occurrences of A
    [ A ]                         — optional — zero or one occurrence of A
    ( A | B )                     — grouping
@@ -16,47 +16,53 @@
    TOKEN                         — lexical token defined in §1
    (* ... *)                     — comment
 
-   Whitespace (spaces, tabs, newlines) and line comments are
-   silently discarded between tokens and do not appear in rules.
-   ============================================================ *)
+   Whitespace (spaces, tabs, newlines) and line comments are silently discarded between tokens and do not appear in
+   rules.
+   ================================================================================================================== *)
 
 
-(* ── §1  Lexical Tokens ────────────────────────────────────── *)
+(* =====================================================================================================================
+   §1  Lexical Tokens
+   ================================================================================================================== *)
 
-LETTER      ::= "A".."Z" | "a".."z" ;
-DIGIT       ::= "0".."9" ;
-HEX_DIGIT   ::= DIGIT | "A".."F" | "a".."f" ;
+LETTER       ::= "A".."Z" | "a".."z" ;
+DIGIT        ::= "0".."9" ;
+HEX_DIGIT    ::= DIGIT | "A".."F" | "a".."f" ;
 
-IDENT       ::= ( LETTER | "_" ) { LETTER | DIGIT | "_" } ;
-              (* Any IDENT that matches a keyword listed in §1.1
-                 is a keyword token, not a user-defined identifier. *)
+(*
+   Any IDENT that matches a keyword listed in §1.1 is a keyword token, not a user-defined identifier.
+*)
+IDENT        ::= ( LETTER | "_" ) { LETTER | DIGIT | "_" } ;
 
-INTEGER     ::= DIGIT { DIGIT } ;
-HEX_LIT     ::= "0x" HEX_DIGIT { HEX_DIGIT } ;
-STRING      ::= '"' { unicode_char_except_dquote_or_newline } '"' ;
-DURATION    ::= INTEGER ( "ms" | "s" ) ;
+INTEGER      ::= DIGIT { DIGIT } ;
+HEX_LIT      ::= "0x" HEX_DIGIT { HEX_DIGIT } ;
+STRING       ::= '"' { unicode_char_except_dquote_or_newline } '"' ;
+DURATION     ::= INTEGER ( "ms" | "s" ) ;
 
+(*
+   Consumed and discarded by the lexer. Not present in the token stream seen by the parser.
+*)
 LINE_COMMENT ::= "//" { char_except_newline } newline ;
-              (* Consumed and discarded by the lexer.
-                 Not present in the token stream seen by the parser. *)
+
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §1.1  Reserved Keywords
+   The following identifiers are reserved and may not be used as user-defined names for nodes, wires, functions, or
+   kinds.
+
+   all            and       animate   arrange   auto      bottom_to_top  button    compute   constant  contains  context
+   emit           fn        for       format    from      grid           group     hash      horizontal label    layout
+   left_to_right  let       node      not       on        operation      or        over      pinned    register  reroute
+   right_to_left  rotl_s    rotl_u    rotr_s    rotr_u    set            shl       shr_s     shr_u     symbol    to
+   top_to_bottom  vertical  via       wire      word_size xor
+*)
 
 
-(* §1.1  Reserved Keywords
-   The following identifiers are reserved and may not be used as
-   user-defined node names, wire names, function names, or kind names.
+(* =====================================================================================================================
+   §2  Top-Level Structure
 
-   all       and       animate   arrange   auto      bottom_to_top
-   button    compute   constant  contains  context   emit
-   fn        for       format    from      grid      group
-   hash      horizontal label    layout    left_to_right
-   let       node      not       on        operation or
-   over      pinned    register  reroute   right_to_left
-   rotl_s    rotl_u    rotr_s    rotr_u    set       shl
-   shr_s     shr_u     symbol    to        top_to_bottom
-   vertical  via       wire      word_size xor                  *)
-
-
-(* ── §2  Top-Level Structure ───────────────────────────────── *)
+   node_decl, wire_decl, group_decl, layout_decl and event_handler may appear at the top level for simple
+   single-algorithm files, or nested inside a hash_block for multi-algorithm files.
+   ================================================================================================================== *)
 
 program     ::= { top_item } ;
 
@@ -69,46 +75,55 @@ top_item    ::= context_block
              |  layout_decl
              |  event_handler ;
 
-(* node_decl, wire_decl, group_decl, layout_decl and event_handler
-   may appear at the top level for simple single-algorithm files,
-   or nested inside a hash_block for multi-algorithm files.       *)
 
-
-(* ── §3  Context Block ─────────────────────────────────────── *)
+(* =====================================================================================================================
+   §3  Context Block
+   ================================================================================================================== *)
 
 context_block  ::= "context" "{" { context_item } "}" ;
 
 context_item   ::= word_size_decl
                 |  fn_def ;
 
+(*
+   Declares the word width in bits for all arithmetic and shift/rotate operations within scope.
+   Typical values: 32 (SHA-256), 64 (SHA-512).
+*)
 word_size_decl ::= "word_size" ":" INTEGER ;
-                (* Declares the word width in bits for all arithmetic
-                   and shift/rotate operations within scope.
-                   Typical values: 32 (SHA-256), 64 (SHA-512).  *)
 
 
-(* ── §4  Function Definitions ──────────────────────────────── *)
+(* =====================================================================================================================
+   §4  Function Definitions
+
+   Semantic constraints are enforced in the analysis pass, not here:
+     1. Bodies are pure expressions having neither side effects nor control flow.
+     2. Direct and indirect recursion are rejected.
+        Detection: topological sort of the inter-function call graph; any cycle is a compile-time error.  The offending
+        cycle will be named.
+     3. Arguments are values only.
+        Functions are not first-class and may not be passed as arguments to other functions.  This prevents 
+        Y-combinator-style indirect self-application.
+     4. Declaration order within a block is irrelevant.
+        Parsing uses two-pass resolution — collect all signatures in the first pass, then resolve all bodies against
+        the complete symbol table in second pass.
+   ================================================================================================================== *)
 
 fn_def      ::= "fn" IDENT "(" [ param_list ] ")" "=" expr ;
 
 param_list  ::= IDENT { "," IDENT } ;
 
-(* Semantic constraints — enforced in the analysis pass, not here:
-     1. Bodies are pure expressions: no effects, no control flow.
-     2. Arguments are values only.  Functions are not first-class
-        and may not be passed as arguments to other functions.
-        (This also structurally prevents Y-combinator-style
-        indirect self-application.)
-     3. Direct and indirect recursion are rejected.
-        Detection: topological sort of the inter-function call graph;
-        any cycle is a compile-time error naming the offending cycle.
-     4. Declaration order within a block is irrelevant.
-        Implementation: two-pass resolution — collect all signatures
-        in pass one, resolve all bodies against the complete symbol
-        table in pass two.                                          *)
 
+(* =====================================================================================================================
+   §5  Hash Block
 
-(* ── §5  Hash Block ────────────────────────────────────────── *)
+   A hash_block provides a scope for a context and one or more fn_def declarations.
+   Functions defined at the top level are visible inside hash_blocks.
+   Functions defined inside a hash_block shadow top-level names.
+   Typical pattern:
+     Top-level context  — structural primitives (Sigma, sigma, Ch, Maj) parameterised over rotation/shift amounts.
+     Hash-block context — algorithm-specific bindings that invoke the top-level primitives with concrete constants,
+                          e.g. fn Sigma1(e) = Sigma(e, 6, 11, 25)
+   ================================================================================================================== *)
 
 hash_block  ::= "hash" IDENT "{" { hash_item } "}" ;
 
@@ -120,26 +135,18 @@ hash_item   ::= context_block
              |  layout_decl
              |  event_handler ;
 
-(* A hash_block scopes its context and fn_def declarations.
-   Functions defined at the top level are visible inside hash_blocks.
-   Functions defined inside a hash_block shadow top-level names.
-   Typical pattern:
-     Top-level context  — structural primitives (Sigma, sigma, Ch, Maj)
-                          parameterised over rotation/shift amounts.
-     Hash-block context — algorithm-specific bindings that invoke the
-                          top-level primitives with concrete constants,
-                          e.g. fn Sigma1(e) = Sigma(e, 6, 11, 25)     *)
 
+(* =====================================================================================================================
+   §6  Node Declarations
 
-(* ── §6  Node Declarations ─────────────────────────────────── *)
+   IDENT refers to a user-defined kind from the kind registry.
+   The PoC uses built-in kind, but the registry mechanism will act as a later extension point.
+   ================================================================================================================== *)
 
 node_decl   ::= "node" IDENT ":" kind
                 "{" [ property { "," property } [","] ] "}" ;
 
 kind        ::= builtin_kind | IDENT ;
-              (* IDENT refers to a user-defined kind from the
-                 kind registry.  Builtins are used for the PoC;
-                 the registry mechanism is the extension point.  *)
 
 builtin_kind ::= "register"
               |  "operation"
@@ -148,23 +155,26 @@ builtin_kind ::= "register"
 
 property    ::= IDENT ":" prop_value ;
 
+(*
+   STRING hold display values for properties such as label, symbol, or colour.
+   `expr` covers integers, hex literals, identifiers, function calls, and full computed expressions (e.g. the "compute"
+   property of an operation node).
+
+   Expected values for well-known property names:
+   label      : STRING
+   symbol     : STRING       (display glyph, e.g. "Σ₁", "⊕")
+   format     : format_spec  (identifier — see §6.1)
+   word_size  : INTEGER      (per-node override of context value)
+   layout     : layout_mode  (see §6.2)
+   compute    : expr         (operation node shorthand — see §9)
+   arrange    : arrange_mode (see §8)
+*)
 prop_value  ::= STRING | expr ;
-              (* STRING is used for display values (label, symbol, colour).
-                 expr covers integers, hex literals, identifiers,
-                 function calls, and full computed expressions
-                 (e.g. the "compute" property of an operation node).
-
-                 Expected values for well-known property names:
-                   label      : STRING
-                   symbol     : STRING       (display glyph, e.g. "Σ₁", "⊕")
-                   format     : format_spec  (identifier — see §6.1)
-                   word_size  : INTEGER      (per-node override of context value)
-                   layout     : layout_mode  (see §6.2)
-                   compute    : expr         (operation node shorthand — see §9)
-                   arrange    : arrange_mode (see §8)                        *)
 
 
-(* §6.1  Format specifiers — valid identifiers for the "format" property *)
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §6.1  Format specifiers — valid identifiers for the "format" property
+*)
 
 format_spec ::= "hex8"  | "hex16"  | "hex32"  | "hex64"
              |  "bin8"  | "bin16"  | "bin32"  | "bin64"
@@ -173,7 +183,9 @@ format_spec ::= "hex8"  | "hex16"  | "hex32"  | "hex64"
                 Listed here for documentation completeness.          *)
 
 
-(* §6.2  Layout mode — valid values for the "layout" property *)
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §6.2  Layout mode — valid values for the "layout" property
+*)
 
 layout_mode ::= "auto"
              |  "pinned" "(" INTEGER "," INTEGER ")" ;
@@ -185,18 +197,21 @@ layout_mode ::= "auto"
                 a fn_call — both are valid primary_expr within expr.  *)
 
 
-(* ── §7  Wire Declarations ─────────────────────────────────── *)
+(* =====================================================================================================================
+   §7  Wire Declarations
+
+   IDENT names a declared nodes connected by the wire
+   "?"   denotes an endpoint whose connected node is assigned or rerouted at runtime via a reroute_effect (see §10.5).
+   ================================================================================================================== *)
 
 wire_decl   ::= "wire" [ IDENT ":" ] wire_endpoint "->" wire_endpoint ;
 
 wire_endpoint ::= IDENT | "?" ;
-              (* IDENT names a declared node.
-                 "?"   denotes an open endpoint whose connected node
-                       is assigned or rerouted at runtime via
-                       a reroute_effect (see §10.5).                 *)
 
 
-(* ── §8  Group and Layout Declarations ─────────────────────── *)
+(* =====================================================================================================================
+   §8  Group and Layout Declarations
+   ================================================================================================================== *)
 
 group_decl    ::= "group" IDENT "{" { group_item } "}" ;
 
@@ -210,17 +225,16 @@ arrange_mode  ::= "grid" | "horizontal" | "vertical" ;
 
 layout_decl   ::= "layout" ":" flow_direction ;
 
-flow_direction ::= "left_to_right"  | "top_to_bottom"
-                |  "right_to_left"  | "bottom_to_top" ;
-                (* Sets the primary axis for topological layout.
-                   Default when omitted: left_to_right.            *)
+(*
+   Sets the primary axis for topological layout.  Defaults to: left_to_right.
+*)
+flow_direction ::= "left_to_right"  | "top_to_bottom" |  "right_to_left"  | "bottom_to_top" ;
 
 
-(* ── §9  Event Handlers ─────────────────────────────────────── *)
-
-event_handler ::= IDENT "on" IDENT "(" [ param_list ] ")" "{" { effect } "}" ;
-
-(* First IDENT  = node name — must be declared in scope.
+(* =====================================================================================================================
+   §9  Event Handlers
+  
+   First IDENT  = node name — must be declared in scope.
    Second IDENT = event name.
 
    Built-in event names:
@@ -230,14 +244,18 @@ event_handler ::= IDENT "on" IDENT "(" [ param_list ] ")" "{" { effect } "}" ;
 
    User-defined event names are valid wherever built-ins are.
 
-   The "compute" property on an operation node is syntactic sugar
-   that expands to an implicit receive handler:
+   The "compute" property on an operation node is syntactic sugar that expands to an implicit receive handler:
      node s1 : operation { compute: Sigma1(e) }
    desugars to:
-     s1 on receive(e) { emit forward(Sigma1(e)) }             *)
+     s1 on receive(e) { emit forward(Sigma1(e)) }
+   ================================================================================================================== *)
+
+event_handler ::= IDENT "on" IDENT "(" [ param_list ] ")" "{" { effect } "}" ;
 
 
-(* ── §10  Effects ───────────────────────────────────────────── *)
+(* =====================================================================================================================
+   §10  Effects
+   ================================================================================================================== *)
 
 effect      ::= set_effect
              |  animate_effect
@@ -245,88 +263,104 @@ effect      ::= set_effect
              |  reroute_effect
              |  let_binding ;
 
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §10.1  set — mutate a node property or assign to a named binding
+*)
 
-(* §10.1  set — mutate a node property or assign to a named binding *)
-
+(*
+   Sets a named visual property on the enclosing node.
+   e.g.  set label: incoming_value
+*)
 set_effect  ::= "set" ( prop_assign | var_assign | IDENT ) ;
 
 prop_assign ::= IDENT ":" expr ;
-              (* Sets a named visual property on the enclosing node.
-                 e.g.  set label: incoming_value                      *)
 
+(* Assigns the result of an expression to a named binding in the handler scope, or updates node state.
+   e.g.  set result = a xor b
+*)
+
+(* Bare IDENT form:
+    set <ident>  sets the node's primary display value to the parameter named by ident, without further computation.
+    e.g.  set value
+*)
 var_assign  ::= IDENT "=" expr ;
-              (* Assigns the result of an expression to a named
-                 binding in the handler scope, or updates node state.
-                 e.g.  set result = a xor b                           *)
 
-              (* Bare IDENT form:
-                 set <ident>  sets the node's primary display value
-                 to the parameter named by ident, without further
-                 computation.  e.g.  set value                        *)
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §10.2  let — introduce an immutable local binding in handler scope
+*)
 
-
-(* §10.2  let — introduce an immutable local binding in handler scope *)
-
+(*
+   The bound name is visible for the remainder of the enclosing event handler block only.
+*)
 let_binding ::= "let" IDENT "=" expr ;
-              (* The bound name is visible for the remainder of the
-                 enclosing event handler block only.                   *)
 
 
-(* §10.3  animate — trigger a visual transition on the node *)
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §10.3  animate — trigger a visual transition on the node
+*)
 
 animate_effect  ::= "animate" animate_spec ;
 
 animate_spec    ::= fill_pulse | prop_transition ;
 
+(* Pulses the node fill to a named colour then returns to the default.
+   e.g.  animate fill: pulse "gold" for 250ms
+*)
 fill_pulse      ::= "fill" ":" "pulse" STRING "for" DURATION ;
-                 (* Pulses the node fill to a named colour then
-                    returns to the default.
-                    e.g.  animate fill: pulse "gold" for 250ms        *)
 
+(*
+   Animates any numeric property between two values.
+   e.g.  animate opacity from 1.0 to 0.0 over 300ms
+*)
 prop_transition ::= IDENT "from" expr "to" expr "over" DURATION ;
-                 (* Animates any numeric property between two values.
-                    e.g.  animate opacity from 1.0 to 0.0 over 300ms  *)
 
 
-(* §10.4  emit — raise an outgoing event, optionally directed *)
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §10.4  emit — raise an outgoing event, optionally directed
+*)
 
 emit_effect  ::= "emit" IDENT "(" [ arg_list ] ")" [ emit_target ] ;
 
 emit_target  ::= "->" emit_dest
               |  "via" IDENT ;        (* IDENT = named wire            *)
 
+(* "all"  — broadcast to every outgoing wire.
+    IDENT  — send to a specific node or wire.
+
+    Omitting emit_target when the node has exactly one outgoing wire implicitly selects that wire.
+    Omitting emit_target when the node has multiple outgoing wires is a semantic error.
+*)
 emit_dest    ::= "all" | IDENT ;
-              (* "all"  — broadcast to every outgoing wire.
-                 IDENT  — send to a specific node or wire.
-                 Omitting emit_target when the node has exactly one
-                 outgoing wire implicitly selects that wire.
-                 Omitting emit_target when the node has more than one
-                 outgoing wire is a semantic error.                    *)
 
 arg_list     ::= expr { "," expr } ;
 
 
-(* §10.5  reroute — redirect an open wire endpoint at runtime *)
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §10.5  reroute — redirect an open wire endpoint at runtime
+*)
 
+(* First IDENT   = wire name; must have a "?" endpoint.
+   Second IDENT  = the node to connect to.
+
+   "to"   replaces the target (downstream) endpoint.
+   "from" replaces the source (upstream) endpoint.
+*)
 reroute_effect ::= "reroute" IDENT ( "to" | "from" ) IDENT ;
-                (* First IDENT   = wire name; must have a "?" endpoint.
-                   Second IDENT  = the node to connect to.
-                   "to"   replaces the target (downstream) endpoint.
-                   "from" replaces the source (upstream) endpoint.    *)
 
 
-(* ── §11  Expressions ──────────────────────────────────────── *)
+(* =====================================================================================================================
+   §11  Expressions
 
-(* Operator precedence — low (loose binding) to high (tight binding):
+   Operator precedence — low (loose binding) to high (tight binding):
 
      Level 1 (loosest) :  or
      Level 2           :  xor
      Level 3           :  and
-     Level 4           :  +   -               (modular arithmetic, mod 2^word_size)
-     Level 5           :  shl  shr_u  shr_s   (bit shift)
+     Level 4           :  +   -                            (modular arithmetic, mod 2^word_size)
+     Level 5           :  shl  shr_u  shr_s                (bit shift)
      Level 6           :  rotr_u  rotr_s  rotl_u  rotl_s   (bit rotation)
-     Level 7           :  not                 (unary prefix complement)
-     Level 8 (tightest):  primary             (literal, identifier, call, grouped)
+     Level 7           :  not                              (unary prefix complement)
+     Level 8 (tightest):  primary                          (literal, identifier, call, grouped)
 
    All binary operators associate left-to-right.
    Parentheses override precedence in the standard way.
@@ -334,12 +368,13 @@ reroute_effect ::= "reroute" IDENT ( "to" | "from" ) IDENT ;
    Operator suffix convention:
      _u  unsigned interpretation — vacated bits filled with 0
      _s  signed interpretation   — sign bit is preserved
-   Operators without a suffix (and, or, xor, not, +, -, shl) are
-   sign-agnostic: the bit-pattern result is identical for both
-   signed and unsigned operands.
 
-   Note: for cryptographic hash functions all operands are unsigned;
-   the _s variants exist for completeness and future use cases.     *)
+   Operators without a suffix (and, or, xor, not, +, -, shl) are sign-agnostic: the bit-pattern result is identical for
+   both signed and unsigned operands.
+
+   Note: All operands of cryptographic hash functions are unsigned; the _s variants exist only for completeness and
+   future use cases.
+   ================================================================================================================== *)
 
 expr        ::= or_expr ;
 
@@ -353,15 +388,15 @@ rot_expr    ::= unary_expr { rot_op  unary_expr } ;
 unary_expr  ::= "not" unary_expr
              |  primary_expr ;
 
+(*
+   fn_call is tried before IDENT: both begin with IDENT, but fn_call additionally requires a following "(".
+   A bare IDENT with no "(" is therefore always an identifier reference, never an argumentless call.
+*)
 primary_expr ::= INTEGER
               |  HEX_LIT
               |  fn_call
               |  IDENT
               |  "(" expr ")" ;
-              (* fn_call is tried before IDENT: both begin with IDENT,
-                 but fn_call additionally requires a following "(".
-                 A bare IDENT with no "(" is therefore always an
-                 identifier reference, never an argumentless call.  *)
 
 fn_call     ::= IDENT "(" [ arg_list ] ")" ;
 
