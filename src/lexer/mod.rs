@@ -1,7 +1,6 @@
 pub mod duration_unit;
 pub mod span;
 pub mod token;
-#[cfg(test)] mod tests;
 
 use crate::error::lex_error::LexError;
 use span::Span;
@@ -306,3 +305,7 @@ fn keyword_or_ident(s: &str) -> Token {
         _ => Token::Ident(s.to_owned()),
     }
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[cfg(test)]
+mod unit_tests;

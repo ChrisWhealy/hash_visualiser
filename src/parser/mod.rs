@@ -7,7 +7,6 @@ pub(crate) mod ebnf_07;
 pub(crate) mod ebnf_08;
 pub(crate) mod ebnf_09;
 pub(crate) mod ebnf_10;
-#[cfg(test)] mod tests;
 
 use crate::{
     ast::{ebnf_02::Program, ebnf_10::Duration},
@@ -189,3 +188,7 @@ pub fn parse(src: &str) -> Result<Program, crate::error::Error> {
     let mut parser = Parser::new(tokens);
     Ok(parser.parse_program()?)
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[cfg(test)]
+mod unit_tests;

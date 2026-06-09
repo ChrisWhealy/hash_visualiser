@@ -8,4 +8,7 @@ pub(crate) mod ebnf_08;
 pub(crate) mod ebnf_09;
 pub(crate) mod ebnf_10;
 pub(crate) mod ebnf_11;
-#[cfg(test)] mod tests;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[cfg(test)]
+mod unit_tests;
