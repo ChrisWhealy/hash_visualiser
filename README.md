@@ -9,7 +9,7 @@ The objective here is to develop a DSL-based tool for visualizing how data flows
 - [x] Define formal grammar for the DSL
 - [x] Write DSL lexer and parser
 - [x] Create AST from the parser's token stream
-- [ ] Perform semantic graph validation
-- [ ] Construct directed graph
-- [ ] Perform topological sort (Kahn's algorithm, layered output)
+- [x] Perform semantic graph validation
+- [x] Construct directed graph
+- [x] Perform topological sort (Kahn's algorithm, layered output)
 - [ ] Build layout engine that maps each topo-sort layer to a screen position
