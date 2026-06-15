@@ -79,12 +79,12 @@ mod ebnf_02 {
     use super::*;
 
     #[test]
-    fn empty_program_should_have_no_items() -> Result<(), String> {
+    fn should_be_no_items_in_empty_program() -> Result<(), String> {
         eq(parse("")?.items.len(), 0)
     }
 
     #[test]
-    fn program_should_accept_context_block_at_top_level() -> Result<(), String> {
+    fn should_accept_context_block_at_top_level() -> Result<(), String> {
         let prog = parse("context {}")?;
         match prog.items.first() {
             Some(TopItem::Context(_)) => Ok(()),
@@ -93,7 +93,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_fn_def_at_top_level() -> Result<(), String> {
+    fn should_accept_fn_def_at_top_level() -> Result<(), String> {
         let prog = parse("fn f() = 1")?;
         match prog.items.first() {
             Some(TopItem::FnDef(_)) => Ok(()),
@@ -102,7 +102,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_hash_block_at_top_level() -> Result<(), String> {
+    fn should_accept_hash_block_at_top_level() -> Result<(), String> {
         let prog = parse("hash SHA256 {}")?;
         match prog.items.first() {
             Some(TopItem::Hash(_)) => Ok(()),
@@ -111,7 +111,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_node_decl_at_top_level() -> Result<(), String> {
+    fn should_accept_node_decl_at_top_level() -> Result<(), String> {
         let prog = parse("node a : register {}")?;
         match prog.items.first() {
             Some(TopItem::Node(_)) => Ok(()),
@@ -120,7 +120,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_wire_decl_at_top_level() -> Result<(), String> {
+    fn should_accept_wire_decl_at_top_level() -> Result<(), String> {
         let prog = parse("wire a -> b")?;
         match prog.items.first() {
             Some(TopItem::Wire(_)) => Ok(()),
@@ -129,7 +129,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_group_decl_at_top_level() -> Result<(), String> {
+    fn should_accept_group_decl_at_top_level() -> Result<(), String> {
         let prog = parse("group g { contains: [a] }")?;
         match prog.items.first() {
             Some(TopItem::Group(_)) => Ok(()),
@@ -138,7 +138,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_layout_decl_at_top_level() -> Result<(), String> {
+    fn should_accept_layout_decl_at_top_level() -> Result<(), String> {
         let prog = parse("layout: left_to_right")?;
         match prog.items.first() {
             Some(TopItem::Layout(_)) => Ok(()),
@@ -147,7 +147,7 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_event_handler_at_top_level() -> Result<(), String> {
+    fn should_accept_event_handler_at_top_level() -> Result<(), String> {
         let prog = parse("a on receive() {}")?;
         match prog.items.first() {
             Some(TopItem::EventHandler(_)) => Ok(()),
@@ -156,13 +156,13 @@ mod ebnf_02 {
     }
 
     #[test]
-    fn program_should_accept_multiple_items() -> Result<(), String> {
+    fn should_accept_multiple_items() -> Result<(), String> {
         let prog = parse("context {} hash SHA256 {} node a : register {}")?;
         eq(prog.items.len(), 3)
     }
 
     #[test]
-    fn unexpected_token_at_top_level_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_unexpected_token_at_top_level() -> Result<(), String> {
         msg_contains(&expect_parse_err("+")?, "unexpected token")
     }
 }
@@ -174,13 +174,13 @@ mod ebnf_03 {
     use super::*;
 
     #[test]
-    fn empty_context_block_should_have_no_items() -> Result<(), String> {
+    fn should_be_no_items_in_empty_context_block() -> Result<(), String> {
         let ctx = make_parser("context {}")?.parse_context_block().map_err(|e| e.to_string())?;
         eq(ctx.items.len(), 0)
     }
 
     #[test]
-    fn context_block_should_accept_word_size() -> Result<(), String> {
+    fn should_accept_word_size_in_context_block() -> Result<(), String> {
         let ctx = make_parser("context { word_size: 32 }")?
             .parse_context_block().map_err(|e| e.to_string())?;
         eq(ctx.items.len(), 1)?;
@@ -191,7 +191,7 @@ mod ebnf_03 {
     }
 
     #[test]
-    fn context_block_should_accept_fn_def() -> Result<(), String> {
+    fn should_accept_fn_def_in_context_block() -> Result<(), String> {
         let ctx = make_parser("context { fn f() = 1 }")?
             .parse_context_block().map_err(|e| e.to_string())?;
         match ctx.items.first() {
@@ -201,7 +201,7 @@ mod ebnf_03 {
     }
 
     #[test]
-    fn context_block_should_accept_word_size_and_fn_def() -> Result<(), String> {
+    fn should_accept_word_size_and_fn_def_in_context_block() -> Result<(), String> {
         let ctx = make_parser("context { word_size: 64 fn f() = 1 }")?
             .parse_context_block().map_err(|e| e.to_string())?;
         eq(ctx.items.len(), 2)?;
@@ -216,7 +216,7 @@ mod ebnf_03 {
     }
 
     #[test]
-    fn node_decl_inside_context_block_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_node_decl_inside_context_block() -> Result<(), String> {
         let err = make_parser("context { node a : register {} }")?
             .parse_context_block().unwrap_err();
         if err.message.contains("word_size") || err.message.contains("fn") {
@@ -227,7 +227,7 @@ mod ebnf_03 {
     }
 
     #[test]
-    fn unterminated_context_block_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_unterminated_context_block() -> Result<(), String> {
         let err = make_parser("context {")?
             .parse_context_block().unwrap_err();
         if err.message.contains("terminated") || err.message.contains("}") {
@@ -245,7 +245,7 @@ mod ebnf_04 {
     use super::*;
 
     #[test]
-    fn fn_with_no_params_should_parse() -> Result<(), String> {
+    fn should_parse_fn_with_no_params() -> Result<(), String> {
         let f = make_parser("fn f() = 1")?.parse_fn_def().map_err(|e| e.to_string())?;
         eq(f.name.as_str(), "f")?;
         eq(f.params.len(), 0)?;
@@ -256,7 +256,7 @@ mod ebnf_04 {
     }
 
     #[test]
-    fn fn_with_one_param_should_parse() -> Result<(), String> {
+    fn should_parse_fn_with_one_param() -> Result<(), String> {
         let f = make_parser("fn f(x) = x")?.parse_fn_def().map_err(|e| e.to_string())?;
         params_eq(&f.params, &["x"])?;
         match f.body {
@@ -266,7 +266,7 @@ mod ebnf_04 {
     }
 
     #[test]
-    fn fn_with_multiple_params_should_parse() -> Result<(), String> {
+    fn should_parse_fn_with_multiple_params() -> Result<(), String> {
         let f = make_parser("fn Sigma(e, r1, r2, r3) = e rotr_u r1")?
             .parse_fn_def().map_err(|e| e.to_string())?;
         eq(f.name.as_str(), "Sigma")?;
@@ -274,19 +274,19 @@ mod ebnf_04 {
     }
 
     #[test]
-    fn fn_params_should_allow_trailing_comma() -> Result<(), String> {
+    fn should_allow_trailing_comma_in_fn_params() -> Result<(), String> {
         let f = make_parser("fn f(a, b,) = a")?.parse_fn_def().map_err(|e| e.to_string())?;
         params_eq(&f.params, &["a", "b"])
     }
 
     #[test]
-    fn fn_with_missing_equals_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_fn_with_missing_equals() -> Result<(), String> {
         let err = make_parser("fn f() x")?.parse_fn_def().unwrap_err();
         msg_contains(&err.message, "`=`")
     }
 
     #[test]
-    fn fn_with_missing_open_paren_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_fn_with_missing_open_paren() -> Result<(), String> {
         let err = make_parser("fn f x")?.parse_fn_def().unwrap_err();
         msg_contains(&err.message, "`(`")
     }
@@ -299,27 +299,27 @@ mod ebnf_05 {
     use super::*;
 
     #[test]
-    fn empty_hash_block_should_parse() -> Result<(), String> {
+    fn should_parse_empty_hash_block() -> Result<(), String> {
         let h = make_parser("hash SHA256 {}")?.parse_hash_block().map_err(|e| e.to_string())?;
         eq(h.name.as_str(), "SHA256")?;
         eq(h.items.len(), 0)
     }
 
     #[test]
-    fn hash_block_should_accept_context_and_nodes() -> Result<(), String> {
+    fn should_accept_context_and_nodes_in_hash_block() -> Result<(), String> {
         let h = make_parser("hash SHA256 { context { word_size: 32 } node a : register {} }")?
             .parse_hash_block().map_err(|e| e.to_string())?;
         eq(h.items.len(), 2)
     }
 
     #[test]
-    fn hash_block_missing_name_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_hash_block_missing_name() -> Result<(), String> {
         let err = make_parser("hash {}")?.parse_hash_block().unwrap_err();
         msg_contains(&err.message, "identifier")
     }
 
     #[test]
-    fn unterminated_hash_block_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_unterminated_hash_block() -> Result<(), String> {
         let err = make_parser("hash SHA256 {")?.parse_hash_block().unwrap_err();
         if err.message.contains("terminated") || err.message.contains("}") {
             Ok(())
@@ -336,7 +336,7 @@ mod ebnf_06 {
     use super::*;
 
     #[test]
-    fn node_with_register_kind_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_register_kind() -> Result<(), String> {
         let n = make_parser("node a : register {}")?.parse_node_decl().map_err(|e| e.to_string())?;
         eq(n.name.as_str(), "a")?;
         match n.kind {
@@ -346,7 +346,7 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_operation_kind_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_operation_kind() -> Result<(), String> {
         let n = make_parser("node s1 : operation {}")?.parse_node_decl().map_err(|e| e.to_string())?;
         match n.kind {
             NodeKind::Operation => Ok(()),
@@ -355,7 +355,7 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_constant_kind_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_constant_kind() -> Result<(), String> {
         let n = make_parser("node k : constant {}")?.parse_node_decl().map_err(|e| e.to_string())?;
         match n.kind {
             NodeKind::Constant => Ok(()),
@@ -364,7 +364,7 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_button_kind_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_button_kind() -> Result<(), String> {
         let n = make_parser("node btn : button {}")?.parse_node_decl().map_err(|e| e.to_string())?;
         match n.kind {
             NodeKind::Button => Ok(()),
@@ -373,7 +373,7 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_user_defined_kind_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_user_defined_kind() -> Result<(), String> {
         let n = make_parser("node x : mux {}")?.parse_node_decl().map_err(|e| e.to_string())?;
         match n.kind {
             NodeKind::User(ref s) if s == "mux" => Ok(()),
@@ -382,13 +382,13 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_no_properties_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_no_properties() -> Result<(), String> {
         let n = make_parser("node a : register {}")?.parse_node_decl().map_err(|e| e.to_string())?;
         eq(n.properties.len(), 0)
     }
 
     #[test]
-    fn node_with_string_property_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_string_property() -> Result<(), String> {
         let n = make_parser("node a : register { label: \"a\" }")?
             .parse_node_decl().map_err(|e| e.to_string())?;
         eq(n.properties.len(), 1)?;
@@ -400,7 +400,7 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_identifier_property_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_identifier_property() -> Result<(), String> {
         let n = make_parser("node a : register { format: hex32 }")?
             .parse_node_decl().map_err(|e| e.to_string())?;
         match &n.properties[0].value {
@@ -410,21 +410,21 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_with_multiple_properties_should_parse() -> Result<(), String> {
+    fn should_parse_node_with_multiple_properties() -> Result<(), String> {
         let n = make_parser("node a : register { label: \"a\", format: hex32 }")?
             .parse_node_decl().map_err(|e| e.to_string())?;
         eq(n.properties.len(), 2)
     }
 
     #[test]
-    fn node_property_list_should_allow_trailing_comma() -> Result<(), String> {
+    fn should_allow_trailing_comma_in_node_property_list() -> Result<(), String> {
         let n = make_parser("node a : register { label: \"a\", format: hex32, }")?
             .parse_node_decl().map_err(|e| e.to_string())?;
         eq(n.properties.len(), 2)
     }
 
     #[test]
-    fn node_layout_auto_property_should_parse() -> Result<(), String> {
+    fn should_parse_node_layout_auto_property() -> Result<(), String> {
         let n = make_parser("node a : register { layout: auto }")?
             .parse_node_decl().map_err(|e| e.to_string())?;
         match &n.properties[0].value {
@@ -434,7 +434,7 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_layout_pinned_property_should_parse() -> Result<(), String> {
+    fn should_parse_node_layout_pinned_property() -> Result<(), String> {
         let n = make_parser("node a : register { layout: pinned(10, 20) }")?
             .parse_node_decl().map_err(|e| e.to_string())?;
         match &n.properties[0].value {
@@ -444,13 +444,13 @@ mod ebnf_06 {
     }
 
     #[test]
-    fn node_missing_kind_separator_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_node_missing_kind_separator() -> Result<(), String> {
         let err = make_parser("node a {}")?.parse_node_decl().unwrap_err();
         msg_contains(&err.message, "`:`")
     }
 
     #[test]
-    fn node_missing_body_brace_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_node_missing_body_brace() -> Result<(), String> {
         let err = make_parser("node a : register")?.parse_node_decl().unwrap_err();
         msg_contains(&err.message, "`{`")
     }
@@ -463,7 +463,7 @@ mod ebnf_07 {
     use super::*;
 
     #[test]
-    fn unnamed_wire_should_parse() -> Result<(), String> {
+    fn should_parse_unnamed_wire() -> Result<(), String> {
         let w = make_parser("wire a -> b")?.parse_wire_decl().map_err(|e| e.to_string())?;
         eq(w.name.as_deref(), None)?;
         match &w.source {
@@ -477,13 +477,13 @@ mod ebnf_07 {
     }
 
     #[test]
-    fn named_wire_should_parse() -> Result<(), String> {
+    fn should_parse_named_wire() -> Result<(), String> {
         let w = make_parser("wire carry: a -> b")?.parse_wire_decl().map_err(|e| e.to_string())?;
         eq(w.name.as_deref(), Some("carry"))
     }
 
     #[test]
-    fn wire_with_open_source_endpoint_should_parse() -> Result<(), String> {
+    fn should_parse_wire_with_open_source_endpoint() -> Result<(), String> {
         let w = make_parser("wire ? -> b")?.parse_wire_decl().map_err(|e| e.to_string())?;
         match w.source {
             WireEndpoint::Open => Ok(()),
@@ -492,7 +492,7 @@ mod ebnf_07 {
     }
 
     #[test]
-    fn wire_with_open_target_endpoint_should_parse() -> Result<(), String> {
+    fn should_parse_wire_with_open_target_endpoint() -> Result<(), String> {
         let w = make_parser("wire a -> ?")?.parse_wire_decl().map_err(|e| e.to_string())?;
         match w.target {
             WireEndpoint::Open => Ok(()),
@@ -501,7 +501,7 @@ mod ebnf_07 {
     }
 
     #[test]
-    fn named_wire_with_open_source_should_parse() -> Result<(), String> {
+    fn should_parse_named_wire_with_open_source() -> Result<(), String> {
         let w = make_parser("wire w1: ? -> dest")?.parse_wire_decl().map_err(|e| e.to_string())?;
         eq(w.name.as_deref(), Some("w1"))?;
         match w.source {
@@ -511,13 +511,13 @@ mod ebnf_07 {
     }
 
     #[test]
-    fn wire_missing_arrow_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_wire_missing_arrow() -> Result<(), String> {
         let err = make_parser("wire a b")?.parse_wire_decl().unwrap_err();
         msg_contains(&err.message, "`->`")
     }
 
     #[test]
-    fn wire_missing_target_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_wire_missing_target() -> Result<(), String> {
         let err = make_parser("wire a ->")?.parse_wire_decl().unwrap_err();
         if err.message.contains("endpoint") || err.message.contains("end of input") {
             Ok(())
@@ -534,7 +534,7 @@ mod ebnf_08 {
     use super::*;
 
     #[test]
-    fn group_with_contains_should_parse() -> Result<(), String> {
+    fn should_parse_group_with_contains() -> Result<(), String> {
         let g = make_parser("group g { contains: [a, b, c] }")?
             .parse_group_decl().map_err(|e| e.to_string())?;
         eq(g.name.as_str(), "g")?;
@@ -548,7 +548,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn group_contains_should_allow_trailing_comma() -> Result<(), String> {
+    fn should_allow_trailing_comma_in_group_contains() -> Result<(), String> {
         let g = make_parser("group g { contains: [a, b,] }")?
             .parse_group_decl().map_err(|e| e.to_string())?;
         match &g.items[0] {
@@ -558,7 +558,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn group_with_arrange_grid_should_parse() -> Result<(), String> {
+    fn should_parse_group_with_arrange_grid() -> Result<(), String> {
         let g = make_parser("group g { arrange: grid }")?
             .parse_group_decl().map_err(|e| e.to_string())?;
         match &g.items[0] {
@@ -568,7 +568,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn group_with_arrange_horizontal_should_parse() -> Result<(), String> {
+    fn should_parse_group_with_arrange_horizontal() -> Result<(), String> {
         let g = make_parser("group g { arrange: horizontal }")?
             .parse_group_decl().map_err(|e| e.to_string())?;
         match &g.items[0] {
@@ -578,7 +578,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn group_with_arrange_vertical_should_parse() -> Result<(), String> {
+    fn should_parse_group_with_arrange_vertical() -> Result<(), String> {
         let g = make_parser("group g { arrange: vertical }")?
             .parse_group_decl().map_err(|e| e.to_string())?;
         match &g.items[0] {
@@ -588,7 +588,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn layout_left_to_right_should_parse() -> Result<(), String> {
+    fn should_parse_layout_left_to_right() -> Result<(), String> {
         eq(
             make_parser("layout: left_to_right")?.parse_layout_decl().map_err(|e| e.to_string())?,
             FlowDirection::LeftToRight,
@@ -596,7 +596,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn layout_top_to_bottom_should_parse() -> Result<(), String> {
+    fn should_parse_layout_top_to_bottom() -> Result<(), String> {
         eq(
             make_parser("layout: top_to_bottom")?.parse_layout_decl().map_err(|e| e.to_string())?,
             FlowDirection::TopToBottom,
@@ -604,7 +604,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn layout_right_to_left_should_parse() -> Result<(), String> {
+    fn should_parse_layout_right_to_left() -> Result<(), String> {
         eq(
             make_parser("layout: right_to_left")?.parse_layout_decl().map_err(|e| e.to_string())?,
             FlowDirection::RightToLeft,
@@ -612,7 +612,7 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn layout_bottom_to_top_should_parse() -> Result<(), String> {
+    fn should_parse_layout_bottom_to_top() -> Result<(), String> {
         eq(
             make_parser("layout: bottom_to_top")?.parse_layout_decl().map_err(|e| e.to_string())?,
             FlowDirection::BottomToTop,
@@ -620,19 +620,19 @@ mod ebnf_08 {
     }
 
     #[test]
-    fn invalid_flow_direction_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_invalid_flow_direction() -> Result<(), String> {
         let err = make_parser("layout: diagonal")?.parse_layout_decl().unwrap_err();
         msg_contains(&err.message, "flow direction")
     }
 
     #[test]
-    fn invalid_arrange_mode_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_invalid_arrange_mode() -> Result<(), String> {
         let err = make_parser("group g { arrange: diagonal }")?.parse_group_decl().unwrap_err();
         msg_contains(&err.message, "arrange mode")
     }
 
     #[test]
-    fn unknown_group_item_keyword_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_unknown_group_item_keyword() -> Result<(), String> {
         let err = make_parser("group g { emit: foo }")?.parse_group_decl().unwrap_err();
         if err.message.contains("contains") || err.message.contains("arrange") {
             Ok(())
@@ -649,7 +649,7 @@ mod ebnf_09 {
     use super::*;
 
     #[test]
-    fn handler_with_no_params_should_parse() -> Result<(), String> {
+    fn should_parse_handler_with_no_params() -> Result<(), String> {
         let h = make_parser("a on receive() {}")?
             .parse_event_handler().map_err(|e| e.to_string())?;
         eq(h.node.as_str(), "a")?;
@@ -659,28 +659,28 @@ mod ebnf_09 {
     }
 
     #[test]
-    fn handler_with_one_param_should_parse() -> Result<(), String> {
+    fn should_parse_handler_with_one_param() -> Result<(), String> {
         let h = make_parser("a on receive(value) {}")?
             .parse_event_handler().map_err(|e| e.to_string())?;
         params_eq(&h.params, &["value"])
     }
 
     #[test]
-    fn handler_with_multiple_params_should_parse() -> Result<(), String> {
+    fn should_parse_handler_with_multiple_params() -> Result<(), String> {
         let h = make_parser("a on receive(e, f, g) {}")?
             .parse_event_handler().map_err(|e| e.to_string())?;
         params_eq(&h.params, &["e", "f", "g"])
     }
 
     #[test]
-    fn handler_params_should_allow_trailing_comma() -> Result<(), String> {
+    fn should_allow_trailing_comma_in_handler_params() -> Result<(), String> {
         let h = make_parser("a on receive(x, y,) {}")?
             .parse_event_handler().map_err(|e| e.to_string())?;
         params_eq(&h.params, &["x", "y"])
     }
 
     #[test]
-    fn handler_should_accept_reroute_as_event_name() -> Result<(), String> {
+    fn should_accept_reroute_as_event_name() -> Result<(), String> {
         // reroute is a keyword that is also a valid built-in event name
         let h = make_parser("w1 on reroute(new_src) {}")?
             .parse_event_handler().map_err(|e| e.to_string())?;
@@ -688,20 +688,20 @@ mod ebnf_09 {
     }
 
     #[test]
-    fn handler_with_multiple_effects_should_parse() -> Result<(), String> {
+    fn should_parse_handler_with_multiple_effects() -> Result<(), String> {
         let h = make_parser("a on receive(v) { let r = v set value }")?
             .parse_event_handler().map_err(|e| e.to_string())?;
         eq(h.body.len(), 2)
     }
 
     #[test]
-    fn handler_missing_on_keyword_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_handler_missing_on_keyword() -> Result<(), String> {
         let err = make_parser("a receive() {}")?.parse_event_handler().unwrap_err();
         msg_contains(&err.message, "`on`")
     }
 
     #[test]
-    fn handler_missing_open_paren_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_handler_missing_open_paren() -> Result<(), String> {
         let err = make_parser("a on receive {}")?.parse_event_handler().unwrap_err();
         msg_contains(&err.message, "`(`")
     }
@@ -714,7 +714,7 @@ mod ebnf_10 {
     use super::*;
 
     #[test]
-    fn set_prop_assign_should_parse() -> Result<(), String> {
+    fn should_parse_set_prop_assign() -> Result<(), String> {
         match make_parser("set label: incoming")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Set(SetEffect::Prop { name, .. }) => eq(name.as_str(), "label"),
             other => Err(format!("expected Set(Prop), got {other:?}")),
@@ -722,7 +722,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn set_var_assign_should_parse() -> Result<(), String> {
+    fn should_parse_set_var_assign() -> Result<(), String> {
         match make_parser("set result = a xor b")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Set(SetEffect::Var { name, .. }) => eq(name.as_str(), "result"),
             other => Err(format!("expected Set(Var), got {other:?}")),
@@ -730,7 +730,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn set_bare_ident_should_parse() -> Result<(), String> {
+    fn should_parse_set_bare_ident() -> Result<(), String> {
         match make_parser("set value")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Set(SetEffect::Bare(name)) => eq(name.as_str(), "value"),
             other => Err(format!("expected Set(Bare), got {other:?}")),
@@ -738,7 +738,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn let_binding_should_parse() -> Result<(), String> {
+    fn should_parse_let_binding() -> Result<(), String> {
         match make_parser("let r = a rotr_u 6")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Let(b) => {
                 eq(b.name.as_str(), "r")?;
@@ -752,7 +752,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn animate_fill_pulse_should_parse() -> Result<(), String> {
+    fn should_parse_animate_fill_pulse() -> Result<(), String> {
         match make_parser("animate fill: pulse \"gold\" for 250ms")?
             .parse_effect().map_err(|e| e.to_string())?
         {
@@ -768,7 +768,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn animate_prop_transition_should_parse() -> Result<(), String> {
+    fn should_parse_animate_prop_transition() -> Result<(), String> {
         match make_parser("animate opacity from 0 to 1 over 300ms")?
             .parse_effect().map_err(|e| e.to_string())?
         {
@@ -784,14 +784,14 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn animate_with_wrong_pulse_keyword_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_animate_with_wrong_pulse_keyword() -> Result<(), String> {
         let err = make_parser("animate fill: flash \"red\" for 100ms")?
             .parse_effect().unwrap_err();
         msg_contains(&err.message, "pulse")
     }
 
     #[test]
-    fn emit_with_no_target_should_parse() -> Result<(), String> {
+    fn should_parse_emit_with_no_target() -> Result<(), String> {
         match make_parser("emit forward(v)")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Emit(e) => {
                 eq(e.event.as_str(), "forward")?;
@@ -803,7 +803,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn emit_broadcast_to_all_should_parse() -> Result<(), String> {
+    fn should_parse_emit_broadcast_to_all() -> Result<(), String> {
         match make_parser("emit step(1) -> all")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Emit(e) => match e.target {
                 Some(EmitTarget::All) => Ok(()),
@@ -814,7 +814,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn emit_to_named_node_should_parse() -> Result<(), String> {
+    fn should_parse_emit_to_named_node() -> Result<(), String> {
         match make_parser("emit forward(v) -> sink")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Emit(e) => match e.target {
                 Some(EmitTarget::Node(ref s)) if s == "sink" => Ok(()),
@@ -825,7 +825,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn emit_via_named_wire_should_parse() -> Result<(), String> {
+    fn should_parse_emit_via_named_wire() -> Result<(), String> {
         match make_parser("emit forward(v) via carry")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Emit(e) => match e.target {
                 Some(EmitTarget::Via(ref s)) if s == "carry" => Ok(()),
@@ -836,7 +836,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn emit_with_multiple_args_should_parse() -> Result<(), String> {
+    fn should_parse_emit_with_multiple_args() -> Result<(), String> {
         match make_parser("emit send(a, b, c)")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Emit(e) => eq(e.args.len(), 3),
             other => Err(format!("expected Emit, got {other:?}")),
@@ -844,7 +844,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn reroute_to_should_parse() -> Result<(), String> {
+    fn should_parse_reroute_to() -> Result<(), String> {
         match make_parser("reroute w1 to dest")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Reroute(r) => {
                 eq(r.wire.as_str(), "w1")?;
@@ -856,7 +856,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn reroute_from_should_parse() -> Result<(), String> {
+    fn should_parse_reroute_from() -> Result<(), String> {
         match make_parser("reroute w1 from src")?.parse_effect().map_err(|e| e.to_string())? {
             Effect::Reroute(r) => eq(r.direction, RerouteDir::From),
             other => Err(format!("expected Reroute, got {other:?}")),
@@ -864,7 +864,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn reroute_with_invalid_direction_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_reroute_with_invalid_direction() -> Result<(), String> {
         let err = make_parser("reroute w1 above dest")?.parse_effect().unwrap_err();
         if err.message.contains("`to`") || err.message.contains("`from`") {
             Ok(())
@@ -874,7 +874,7 @@ mod ebnf_10 {
     }
 
     #[test]
-    fn unknown_effect_keyword_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_unknown_effect_keyword() -> Result<(), String> {
         // `node` is not a valid effect keyword
         let err = make_parser("node a : register {}")?.parse_effect().unwrap_err();
         msg_contains(&err.message, "effect")
@@ -891,7 +891,7 @@ mod ebnf_11 {
     // §11  Primary expressions
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     #[test]
-    fn integer_literal_should_parse() -> Result<(), String> {
+    fn should_parse_integer_literal() -> Result<(), String> {
         match expr_of("fn f() = 42")? {
             Expr::Integer(42) => Ok(()),
             other => Err(format!("expected Integer(42), got {other:?}")),
@@ -899,7 +899,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn hex_literal_should_parse() -> Result<(), String> {
+    fn should_parse_hex_literal() -> Result<(), String> {
         match expr_of("fn f() = 0xff")? {
             Expr::HexLit(0xff) => Ok(()),
             other => Err(format!("expected HexLit(0xff), got {other:?}")),
@@ -907,7 +907,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn identifier_reference_should_parse() -> Result<(), String> {
+    fn should_parse_identifier_reference() -> Result<(), String> {
         match expr_of("fn f() = x")? {
             Expr::Ident(ref s) if s == "x" => Ok(()),
             other => Err(format!("expected Ident(\"x\"), got {other:?}")),
@@ -915,7 +915,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn function_call_with_no_args_should_parse() -> Result<(), String> {
+    fn should_parse_function_call_with_no_args() -> Result<(), String> {
         match expr_of("fn f() = g()")? {
             Expr::Call { name, args } => {
                 eq(name.as_str(), "g")?;
@@ -926,7 +926,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn function_call_with_one_arg_should_parse() -> Result<(), String> {
+    fn should_parse_function_call_with_one_arg() -> Result<(), String> {
         match expr_of("fn f() = g(x)")? {
             Expr::Call { args, .. } => eq(args.len(), 1),
             other => Err(format!("expected Call, got {other:?}")),
@@ -934,7 +934,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn function_call_with_multiple_args_should_parse() -> Result<(), String> {
+    fn should_parse_function_call_with_multiple_args() -> Result<(), String> {
         match expr_of("fn f() = Sigma(e, 6, 11, 25)")? {
             Expr::Call { name, args } => {
                 eq(name.as_str(), "Sigma")?;
@@ -945,7 +945,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn parenthesised_expression_should_be_transparent() -> Result<(), String> {
+    fn should_be_transparent_for_parenthesised_expression() -> Result<(), String> {
         // (x) must not introduce a new AST node — it should yield just Ident("x")
         match expr_of("fn f() = (x)")? {
             Expr::Ident(_) => Ok(()),
@@ -954,7 +954,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn unary_not_should_parse() -> Result<(), String> {
+    fn should_parse_unary_not() -> Result<(), String> {
         match expr_of("fn f() = not x")? {
             Expr::Not(_) => Ok(()),
             other => Err(format!("expected Not, got {other:?}")),
@@ -962,7 +962,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn double_not_should_nest() -> Result<(), String> {
+    fn should_nest_double_not() -> Result<(), String> {
         match expr_of("fn f() = not not x")? {
             Expr::Not(inner) => match *inner {
                 Expr::Not(_) => Ok(()),
@@ -990,24 +990,24 @@ mod ebnf_11 {
         };
     }
 
-    binop_test!(binop_or,     "or",     BinOp::Or);
-    binop_test!(binop_xor,    "xor",    BinOp::Xor);
-    binop_test!(binop_and,    "and",    BinOp::And);
-    binop_test!(binop_add,    "+",      BinOp::Add);
-    binop_test!(binop_sub,    "-",      BinOp::Sub);
-    binop_test!(binop_shl,    "shl",    BinOp::Shl);
-    binop_test!(binop_shr_u,  "shr_u",  BinOp::ShrU);
-    binop_test!(binop_shr_s,  "shr_s",  BinOp::ShrS);
-    binop_test!(binop_rotr_u, "rotr_u", BinOp::RotrU);
-    binop_test!(binop_rotr_s, "rotr_s", BinOp::RotrS);
-    binop_test!(binop_rotl_u, "rotl_u", BinOp::RotlU);
-    binop_test!(binop_rotl_s, "rotl_s", BinOp::RotlS);
+    binop_test!(should_parse_binop_or,     "or",     BinOp::Or);
+    binop_test!(should_parse_binop_xor,    "xor",    BinOp::Xor);
+    binop_test!(should_parse_binop_and,    "and",    BinOp::And);
+    binop_test!(should_parse_binop_add,    "+",      BinOp::Add);
+    binop_test!(should_parse_binop_sub,    "-",      BinOp::Sub);
+    binop_test!(should_parse_binop_shl,    "shl",    BinOp::Shl);
+    binop_test!(should_parse_binop_shr_u,  "shr_u",  BinOp::ShrU);
+    binop_test!(should_parse_binop_shr_s,  "shr_s",  BinOp::ShrS);
+    binop_test!(should_parse_binop_rotr_u, "rotr_u", BinOp::RotrU);
+    binop_test!(should_parse_binop_rotr_s, "rotr_s", BinOp::RotrS);
+    binop_test!(should_parse_binop_rotl_u, "rotl_u", BinOp::RotlU);
+    binop_test!(should_parse_binop_rotl_s, "rotl_s", BinOp::RotlS);
 
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // §11  Operator precedence
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     #[test]
-    fn xor_should_bind_tighter_than_or() -> Result<(), String> {
+    fn should_bind_xor_tighter_than_or() -> Result<(), String> {
         // a or b xor c  →  a or (b xor c)
         match expr_of("fn f() = a or b xor c")? {
             Expr::BinOp { op: BinOp::Or, lhs, rhs } => {
@@ -1025,7 +1025,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn and_should_bind_tighter_than_xor() -> Result<(), String> {
+    fn should_bind_and_tighter_than_xor() -> Result<(), String> {
         // a xor b and c  →  a xor (b and c)
         match expr_of("fn f() = a xor b and c")? {
             Expr::BinOp { op: BinOp::Xor, rhs, .. } => match *rhs {
@@ -1037,7 +1037,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn add_should_bind_tighter_than_and() -> Result<(), String> {
+    fn should_bind_add_tighter_than_and() -> Result<(), String> {
         // a and b + c  →  a and (b + c)
         match expr_of("fn f() = a and b + c")? {
             Expr::BinOp { op: BinOp::And, rhs, .. } => match *rhs {
@@ -1049,7 +1049,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn shift_should_bind_tighter_than_add() -> Result<(), String> {
+    fn should_bind_shift_tighter_than_add() -> Result<(), String> {
         // a shl 2 + b  →  (a shl 2) + b
         match expr_of("fn f() = a shl 2 + b")? {
             Expr::BinOp { op: BinOp::Add, lhs, .. } => match *lhs {
@@ -1061,7 +1061,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn rotation_should_bind_tighter_than_shift() -> Result<(), String> {
+    fn should_bind_rotation_tighter_than_shift() -> Result<(), String> {
         // a rotr_u 6 shl 2  →  (a rotr_u 6) shl 2
         match expr_of("fn f() = a rotr_u 6 shl 2")? {
             Expr::BinOp { op: BinOp::Shl, lhs, .. } => match *lhs {
@@ -1073,7 +1073,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn not_should_bind_tighter_than_rotation() -> Result<(), String> {
+    fn should_bind_not_tighter_than_rotation() -> Result<(), String> {
         // a rotr_u not b  →  a rotr_u (not b)
         match expr_of("fn f() = a rotr_u not b")? {
             Expr::BinOp { op: BinOp::RotrU, rhs, .. } => match *rhs {
@@ -1085,7 +1085,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn parentheses_should_override_precedence() -> Result<(), String> {
+    fn should_override_precedence_with_parentheses() -> Result<(), String> {
         // (a or b) and c  →  BinOp(And, BinOp(Or, a, b), c)
         match expr_of("fn f() = (a or b) and c")? {
             Expr::BinOp { op: BinOp::And, lhs, .. } => match *lhs {
@@ -1100,7 +1100,7 @@ mod ebnf_11 {
     // §11  Left-associativity
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     #[test]
-    fn same_level_operator_should_be_left_associative() -> Result<(), String> {
+    fn should_be_left_associative_for_same_level_operator() -> Result<(), String> {
         // a xor b xor c  →  (a xor b) xor c
         match expr_of("fn f() = a xor b xor c")? {
             Expr::BinOp { op: BinOp::Xor, lhs, rhs } => {
@@ -1118,7 +1118,7 @@ mod ebnf_11 {
     }
 
     #[test]
-    fn addition_should_be_left_associative() -> Result<(), String> {
+    fn should_be_left_associative_for_addition() -> Result<(), String> {
         // a + b + c  →  (a + b) + c
         match expr_of("fn f() = a + b + c")? {
             Expr::BinOp { op: BinOp::Add, lhs, .. } => match *lhs {
@@ -1133,17 +1133,17 @@ mod ebnf_11 {
     // §11  Error cases
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     #[test]
-    fn empty_expression_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_empty_expression() -> Result<(), String> {
         msg_contains(&expect_parse_err("fn f() =")?, "end of input")
     }
 
     #[test]
-    fn plus_as_primary_expression_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_plus_as_primary_expression() -> Result<(), String> {
         msg_contains(&expect_parse_err("fn f() = +")?, "expression")
     }
 
     #[test]
-    fn unclosed_parenthesis_should_be_an_error() -> Result<(), String> {
+    fn should_error_on_unclosed_parenthesis() -> Result<(), String> {
         msg_contains(&expect_parse_err("fn f() = (a xor b")?, "`)`")
     }
 }
