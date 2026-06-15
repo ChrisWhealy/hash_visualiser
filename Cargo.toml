@@ -12,3 +12,4 @@ name = "hash_visualiser"
 path = "src/main.rs"
 
 [dependencies]
+svg-dom = { path = "../svg-dom" }
