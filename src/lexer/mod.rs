@@ -132,7 +132,21 @@ impl<'src> Lexer<'src> {
             }
             '=' => {
                 self.advance();
-                Ok(Token::Equals)
+                if self.peek(0) == Some('>') {
+                    self.advance();
+                    Ok(Token::FatArrow)
+                } else {
+                    Ok(Token::Equals)
+                }
+            }
+            '.' => {
+                self.advance();
+                if self.peek(0) == Some('.') {
+                    self.advance();
+                    Ok(Token::DotDot)
+                } else {
+                    Err(self.err("unexpected character '.' (did you mean a range `..`?)"))
+                }
             }
             '?' => {
                 self.advance();
@@ -276,6 +290,7 @@ fn keyword_or_ident(s: &str) -> Token {
         "group" => Token::Group,
         "hash" => Token::Hash,
         "horizontal" => Token::Horizontal,
+        "in" => Token::In,
         "label" => Token::Label,
         "layout" => Token::Layout,
         "left_to_right" => Token::LeftToRight,
@@ -287,6 +302,7 @@ fn keyword_or_ident(s: &str) -> Token {
         "or" => Token::Or,
         "over" => Token::Over,
         "pinned" => Token::Pinned,
+        "reduce" => Token::Reduce,
         "register" => Token::Register,
         "reroute" => Token::Reroute,
         "right_to_left" => Token::RightToLeft,

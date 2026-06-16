@@ -50,10 +50,10 @@ LINE_COMMENT ::= "//" { char_except_newline } newline ;
    kinds.
 
    all            and       animate   arrange   auto      bottom_to_top  button    compute   constant  contains  context
-   emit           fn        for       format    from      grid           group     hash      horizontal label    layout
-   left_to_right  let       node      not       on        operation      or        over      pinned    register  reroute
-   right_to_left  rotl_s    rotl_u    rotr_s    rotr_u    set            shl       shr_s     shr_u     symbol    to
-   top_to_bottom  vertical  via       wire      word_size xor
+   emit           fn        for       format    from      grid           group     hash      horizontal in       label
+   layout         left_to_right       let       node      not            on        operation or        over      pinned
+   reduce         register  reroute   right_to_left       rotl_s         rotl_u    rotr_s    rotr_u    set       shl
+   shr_s          shr_u     symbol    to        top_to_bottom            vertical  via       wire      word_size xor
 *)
 
 
@@ -385,7 +385,8 @@ reroute_effect ::= "reroute" IDENT ( "to" | "from" ) IDENT ;
      Level 5           :  shl  shr_u  shr_s                (bit shift)
      Level 6           :  rotr_u  rotr_s  rotl_u  rotl_s   (bit rotation)
      Level 7           :  not                              (unary prefix complement)
-     Level 8 (tightest):  primary                          (literal, identifier, call, grouped)
+     Level 8           :  a[i]                             (postfix array index)
+     Level 9 (tightest):  primary                          (literal, identifier, call, comprehension, reduction, grouped)
 
    All binary operators associate left-to-right.
    Parentheses override precedence in the standard way.
@@ -411,20 +412,59 @@ shift_expr  ::= rot_expr   { shift_op rot_expr  } ;
 rot_expr    ::= unary_expr { rot_op  unary_expr } ;
 
 unary_expr  ::= "not" unary_expr
-             |  primary_expr ;
+             |  postfix_expr ;
+
+(* Postfix array indexing binds tighter than any prefix/binary operator; it chains for multi-dimensional access. *)
+postfix_expr ::= primary_expr { "[" expr "]" } ;
 
 (*
    fn_call is tried before IDENT: both begin with IDENT, but fn_call additionally requires a following "(".
    A bare IDENT with no "(" is therefore always an identifier reference, never an argumentless call.
+
+   A leading "[" begins a comprehension (an array literal in expression position); a trailing "[" after an atom is
+   the index operator above.
 *)
 primary_expr ::= INTEGER
               |  HEX_LIT
               |  fn_call
               |  IDENT
+              |  comprehension
+              |  reduction
               |  "(" expr ")" ;
 
 fn_call     ::= IDENT "(" [ arg_list ] ")" ;
 
+(* See §11.1 *)
+comprehension ::= "[" "for" IDENT "in" INTEGER ".." INTEGER "=>" expr "]" ;
+reduction     ::= "reduce" reduce_op "over" unary_expr ;
+
 add_op      ::= "+" | "-" ;
 shift_op    ::= "shl" | "shr_u" | "shr_s" ;
 rot_op      ::= "rotr_u" | "rotr_s" | "rotl_u" | "rotl_s" ;
+reduce_op   ::= "or" | "xor" | "and" | "+" ;   (* associative operators only *)
+
+
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §11.1  Array expressions
+
+   These three forms let a function process arrays declaratively, without imperative loops, mutable accumulators, or
+   first-class functions (lambdas remain disallowed — see §4 constraint 3).
+
+   index         a[i]                          Selects element i of array a. Chains: state[x][y].
+
+   comprehension [ for x in 0..N => body ]     Binds x to each integer in the half-open range 0..N (N > start, both
+                                               INTEGER literals so the length is statically known) and collects body
+                                               into a fixed-size array of length N - start. x is in scope only within
+                                               body, and is a value — never a function.
+
+   reduction     reduce <op> over arr          Folds array arr to a single value with an associative operator
+                                               (reduce_op). The operator is a keyword token, not a passed value.
+
+   Example — the Keccak theta column-parity step, C[x] = A[x,0] ^ ... ^ A[x,4]:
+
+       fn ThetaC(a: [[u8; 5]; 5]) -> [u8; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+
+   Semantic constraints (enforced in analysis, not here): range bounds are INTEGER literals with end > start; the
+   element type of an indexed expression must be an array; reduce_op must be associative.  Type-checking of bodies
+   against declared types is not yet implemented.
+*)

@@ -319,7 +319,25 @@ impl Parser {
             return Ok(Expr::Not(Box::new(operand)));
         }
 
-        self.parse_primary()
+        self.parse_postfix()
+    }
+
+    // §11.1  postfix array indexing — binds tighter than any binary or unary operator.
+    // postfix ::= primary { "[" expr "]" }
+    fn parse_postfix(&mut self) -> Result<Expr, ParseError> {
+        let mut base = self.parse_primary()?;
+
+        while self.peek_nth(0) == Some(&Token::LBracket) {
+            self.advance();
+            let index = self.parse_expr()?;
+            self.expect(&Token::RBracket, "`]`")?;
+            base = Expr::Index {
+                base: Box::new(base),
+                index: Box::new(index),
+            };
+        }
+
+        Ok(base)
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
@@ -340,6 +358,9 @@ impl Parser {
                 self.expect(&Token::RParen, "`)`")?;
                 Ok(e)
             }
+            // A leading "[" starts an array comprehension (indexing is handled postfix, after an atom).
+            Some(Token::LBracket) => self.parse_comprehension(),
+            Some(Token::Reduce) => self.parse_reduce(),
             // fn_call before bare ident: both start with IDENT, but call has "(" next
             Some(Token::Ident(_)) => {
                 let name = self.expect_ident()?;
@@ -355,5 +376,55 @@ impl Parser {
             Some(t) => Err(self.err(format!("{err_msg} {t}"))),
             None => Err(self.err("{err_msg} end of input")),
         }
+    }
+
+    // §11.1  comprehension ::= "[" "for" IDENT "in" INTEGER ".." INTEGER "=>" expr "]"
+    fn parse_comprehension(&mut self) -> Result<Expr, ParseError> {
+        self.expect(&Token::LBracket, "`[`")?;
+        self.expect(&Token::For, "`for`")?;
+        let var = self.expect_ident()?;
+        self.expect(&Token::In, "`in`")?;
+        let start = self.expect_integer()?;
+        self.expect(&Token::DotDot, "`..`")?;
+        let end = self.expect_integer()?;
+        self.expect(&Token::FatArrow, "`=>`")?;
+        let body = self.parse_expr()?;
+        self.expect(&Token::RBracket, "`]`")?;
+
+        Ok(Expr::Comprehension {
+            var,
+            start,
+            end,
+            body: Box::new(body),
+        })
+    }
+
+    // §11.1  reduction ::= "reduce" reduce_op "over" unary
+    fn parse_reduce(&mut self) -> Result<Expr, ParseError> {
+        self.expect(&Token::Reduce, "`reduce`")?;
+        let op = self.parse_reduce_op()?;
+        self.expect(&Token::Over, "`over`")?;
+        let array = self.parse_unary()?;
+
+        Ok(Expr::Reduce {
+            op,
+            array: Box::new(array),
+        })
+    }
+
+    // A reduction folds with an associative binary operator. Non-associative ops (shifts, rotates, subtraction) are
+    // rejected here rather than silently producing order-dependent nonsense.
+    fn parse_reduce_op(&mut self) -> Result<BinOp, ParseError> {
+        let msg = "`reduce` requires an associative operator (xor, and, or, +), instead found";
+        let op = match self.peek_nth(0) {
+            Some(Token::Or) => BinOp::Or,
+            Some(Token::Xor) => BinOp::Xor,
+            Some(Token::And) => BinOp::And,
+            Some(Token::Plus) => BinOp::Add,
+            Some(t) => return Err(self.err(format!("{msg} {t}"))),
+            None => return Err(self.err(format!("{msg} end of input"))),
+        };
+        self.advance();
+        Ok(op)
     }
 }

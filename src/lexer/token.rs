@@ -24,6 +24,7 @@ pub enum Token {
     Group,
     Hash,
     Horizontal,
+    In,
     Label,
     Layout,
     LeftToRight,
@@ -35,6 +36,7 @@ pub enum Token {
     Or,
     Over,
     Pinned,
+    Reduce,
     Register,
     Reroute,
     RightToLeft,
@@ -64,6 +66,8 @@ pub enum Token {
 
     // Punctuation
     Arrow,    // ->
+    FatArrow, // =>
+    DotDot,   // ..
     Colon,    // :
     Equals,   // =
     LBrace,   // {
@@ -93,6 +97,8 @@ impl std::fmt::Display for Token {
                 if *u == DurationUnit::Ms { "ms" } else { "s" }
             ),
             Token::Arrow => write!(f, "`->`"),
+            Token::FatArrow => write!(f, "`=>`"),
+            Token::DotDot => write!(f, "`..`"),
             Token::Colon => write!(f, "`:`"),
             Token::Equals => write!(f, "`=`"),
             Token::LBrace => write!(f, "`{{`"),

@@ -221,6 +221,31 @@ fn should_reject_undeclared_function_call() {
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #[test]
+fn should_detect_undeclared_function_called_inside_comprehension() {
+    // Confirms call-graph analysis recurses into comprehension/reduce/index bodies, not just flat expressions.
+    let errs = graph_errors_for("
+        fn f(a: [[u8; 5]; 5]) -> [u8; 5] = [ for x in 0..5 => reduce xor over missing(a[x]) ]
+    ").unwrap();
+
+    assert!(errs.iter().any(
+        |e| matches!(e, GraphError::UndeclaredFn { callee, .. } if callee == "missing")
+    ));
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_validate_array_processing_function() {
+    let g = parse_and_build("
+        hash SHA3 {
+            fn ThetaC(a: [[u8; 5]; 5]) -> [u8; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+        }
+    ").unwrap();
+
+    assert!(g.fn_defs.contains_key("ThetaC"));
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
 fn should_reject_cyclical_node_graph() {
     let errs = graph_errors_for("
         node a : register {}

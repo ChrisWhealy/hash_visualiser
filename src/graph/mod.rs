@@ -333,6 +333,12 @@ fn walk_expr_calls(expr: &Expr, calls: &mut Vec<(String, usize)>) {
             walk_expr_calls(rhs, calls);
         }
         Expr::Not(inner) => walk_expr_calls(inner, calls),
+        Expr::Index { base, index } => {
+            walk_expr_calls(base, calls);
+            walk_expr_calls(index, calls);
+        }
+        Expr::Comprehension { body, .. } => walk_expr_calls(body, calls),
+        Expr::Reduce { array, .. } => walk_expr_calls(array, calls),
         Expr::Integer(_) | Expr::HexLit(_) | Expr::Ident(_) => {}
     }
 }

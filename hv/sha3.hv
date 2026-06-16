@@ -6,17 +6,20 @@
 // In this proof-of-concept, the lanes are visualised as hex bytes, so the state has the type [[u8; 5]; 5] and is
 // rendered with the hex8 formatter.
 //
-// ThetaC computes, for each column, the XOR parity of its five lanes.
+// ThetaC computes, for each column, the XOR parity of its five lanes. It takes the 5x5 state [[u8; 5]; 5] and returns
+// the 5-element column-parity vector [u8; 5]:
 //
-// It takes the 5x5 state [[u8; 5]; 5] and returns the 5-element column-parity vector [u8; 5].
-// The DSL has no array-indexing operator yet, so the body below is a placeholder.
+//     C[x] = A[x,0] ^ A[x,1] ^ A[x,2] ^ A[x,3] ^ A[x,4]   for x in 0..5
 //
-// A function that is missing the `-> type` declaration returns UNIT
+// Expressed declaratively as an array comprehension over the columns, whose body XOR-reduces each column (row) — no
+// loop, no mutable accumulator, no first-class functions.
+//
+// A function that is missing the `-> type` declaration returns UNIT.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 hash SHA3 {
     context { word_size: 8 }
 
-    fn ThetaC(a: [[u8; 5]; 5]) -> [u8; 5] = a
+    fn ThetaC(a: [[u8; 5]; 5]) -> [u8; 5] = [ for x in 0..5 => reduce xor over a[x] ]
 
     node state : register  { label: "A", format: hex8 }
     node c     : operation { symbol: "ThetaC" }

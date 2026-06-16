@@ -299,3 +299,115 @@ fn should_error_on_plus_as_primary_expression() -> Result<(), String> {
 fn should_error_on_unclosed_parenthesis() -> Result<(), String> {
     msg_contains(&expect_parse_err("fn f() = (a xor b")?, "`)`")
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// §11.1  Array expressions — index, comprehension, reduction
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_parse_array_index() -> Result<(), String> {
+    match expr_of("fn f() = a[0]")? {
+        Expr::Index { base, index } => {
+            match (*base, *index) {
+                (Expr::Ident(b), Expr::Integer(0)) if b == "a" => Ok(()),
+                (b, i) => Err(format!("expected a[0], got {b:?}[{i:?}]")),
+            }
+        }
+        other => Err(format!("expected Index, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_parse_chained_array_index() -> Result<(), String> {
+    // state[x][y]  →  Index(Index(state, x), y)  (left-associative postfix)
+    match expr_of("fn f() = state[x][y]")? {
+        Expr::Index { base, index } => {
+            match *index {
+                Expr::Ident(ref y) if y == "y" => {}
+                other => return Err(format!("expected outer index y, got {other:?}")),
+            }
+            match *base {
+                Expr::Index { .. } => Ok(()),
+                other => Err(format!("expected inner Index, got {other:?}")),
+            }
+        }
+        other => Err(format!("expected Index, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_parse_comprehension() -> Result<(), String> {
+    match expr_of("fn f() = [ for i in 0..5 => i ]")? {
+        Expr::Comprehension { var, start, end, body } => {
+            eq(var.as_str(), "i")?;
+            eq(start, 0)?;
+            eq(end, 5)?;
+            match *body {
+                Expr::Ident(ref s) if s == "i" => Ok(()),
+                other => Err(format!("expected Ident(i) body, got {other:?}")),
+            }
+        }
+        other => Err(format!("expected Comprehension, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_parse_reduction() -> Result<(), String> {
+    match expr_of("fn f() = reduce xor over row")? {
+        Expr::Reduce { op, array } => {
+            eq(op, BinOp::Xor)?;
+            match *array {
+                Expr::Ident(ref s) if s == "row" => Ok(()),
+                other => Err(format!("expected Ident(row), got {other:?}")),
+            }
+        }
+        other => Err(format!("expected Reduce, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_reduce_with_plus_operator() -> Result<(), String> {
+    match expr_of("fn f() = reduce + over xs")? {
+        Expr::Reduce { op, .. } => eq(op, BinOp::Add),
+        other => Err(format!("expected Reduce, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_parse_theta_c_column_parity() -> Result<(), String> {
+    // The whole point: [ for x in 0..5 => reduce xor over a[x] ]
+    match expr_of("fn f() = [ for x in 0..5 => reduce xor over a[x] ]")? {
+        Expr::Comprehension { var, start, end, body } => {
+            eq(var.as_str(), "x")?;
+            eq(start, 0)?;
+            eq(end, 5)?;
+            match *body {
+                Expr::Reduce { op: BinOp::Xor, array } => match *array {
+                    Expr::Index { .. } => Ok(()),
+                    other => Err(format!("expected Index a[x], got {other:?}")),
+                },
+                other => Err(format!("expected Reduce body, got {other:?}")),
+            }
+        }
+        other => Err(format!("expected Comprehension, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_error_on_reduce_with_nonassociative_operator() -> Result<(), String> {
+    msg_contains(&expect_parse_err("fn f() = reduce shl over xs")?, "associative")
+}
+
+#[test]
+fn should_error_on_comprehension_missing_fat_arrow() -> Result<(), String> {
+    msg_contains(&expect_parse_err("fn f() = [ for i in 0..5 i ]")?, "`=>`")
+}
+
+#[test]
+fn should_error_on_comprehension_missing_range() -> Result<(), String> {
+    msg_contains(&expect_parse_err("fn f() = [ for i in 0 => i ]")?, "`..`")
+}
+
+#[test]
+fn should_error_on_unclosed_index() -> Result<(), String> {
+    msg_contains(&expect_parse_err("fn f() = a[0")?, "`]`")
+}

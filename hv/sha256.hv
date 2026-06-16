@@ -1,19 +1,19 @@
 context {
     word_size: 32
 
-    fn Sigma(e, r1, r2, r3) = (e rotr_u r1) xor (e rotr_u r2) xor (e rotr_u r3)
-    fn sigma(x, r1, r2, s)  = (x rotr_u r1) xor (x rotr_u r2) xor (x shr_u s)
-    fn Ch(e, f, g)           = (e and f) xor ((not e) and g)
-    fn Maj(a, b, c)          = (a and b) xor (a and c) xor (b and c)
+    fn Sigma(e: u32, r1: u32, r2: u32, r3: u32) -> u32 = (e rotr_u r1) xor (e rotr_u r2) xor (e rotr_u r3)
+    fn sigma(x: u32, r1: u32, r2: u32, s: u32)  -> u32 = (x rotr_u r1) xor (x rotr_u r2) xor (x shr_u s)
+    fn Ch(e: u32, f: u32, g: u32)               -> u32 = (e and f) xor ((not e) and g)
+    fn Maj(a: u32, b: u32, c: u32)              -> u32 = (a and b) xor (a and c) xor (b and c)
 }
 
 hash SHA256 {
     context { word_size: 32 }
 
-    fn Sigma0(a) = Sigma(a, 2,  13, 22)
-    fn Sigma1(e) = Sigma(e, 6,  11, 25)
-    fn sigma0(x) = sigma(x, 7,  18,  3)
-    fn sigma1(x) = sigma(x, 17, 19, 10)
+    fn Sigma0(a: u32) -> u32 = Sigma(a, 2,  13, 22)
+    fn Sigma1(e: u32) -> u32 = Sigma(e, 6,  11, 25)
+    fn sigma0(x: u32) -> u32 = sigma(x, 7,  18,  3)
+    fn sigma1(x: u32) -> u32 = sigma(x, 17, 19, 10)
 
     node a    : register  { label: "a", format: hex32 }
     node e    : register  { label: "e", format: hex32 }
