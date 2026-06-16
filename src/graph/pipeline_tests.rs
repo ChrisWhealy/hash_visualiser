@@ -140,8 +140,8 @@ fn should_capture_hash_block_context_word_size() {
 fn should_validate_and_collect_context_functions() {
     let g = parse_and_build("
         context {
-            fn base(x) = x rotr_u 2
-            fn derived(x) = base(x) xor base(x)
+            fn base(x: u32) = x rotr_u 2
+            fn derived(x: u32) = base(x) xor base(x)
         }
     ").unwrap();
 
@@ -155,8 +155,8 @@ fn should_validate_parameterised_sigma_style_functions() {
     let g = parse_and_build("
         context {
             word_size: 64
-            fn Sigma(e, r1, r2, r3) = (e rotr_u r1) xor (e rotr_u r2) xor (e shr_u r3)
-            fn Sigma1(e) = Sigma(e, 14, 18, 41)
+            fn Sigma(e: u64, r1: u64, r2: u64, r3: u64) = (e rotr_u r1) xor (e rotr_u r2) xor (e shr_u r3)
+            fn Sigma1(e: u64) = Sigma(e, 14, 18, 41)
         }
     ").unwrap();
 
@@ -211,7 +211,7 @@ fn should_reject_duplicate_node() {
 #[test]
 fn should_reject_undeclared_function_call() {
     let errs = graph_errors_for("
-        fn foo(x) = missing(x)
+        fn foo(x: u32) = missing(x)
     ").unwrap();
 
     assert!(errs.iter().any(
@@ -236,8 +236,8 @@ fn should_reject_cyclical_node_graph() {
 #[test]
 fn should_reject_mutually_recursive_functions() {
     let errs = graph_errors_for("
-        fn ping(x) = pong(x)
-        fn pong(x) = ping(x)
+        fn ping(x: u32) = pong(x)
+        fn pong(x: u32) = ping(x)
     ").unwrap();
 
     assert!(errs.iter().any(|e| matches!(e, GraphError::FnCycle(_))));
@@ -247,7 +247,7 @@ fn should_reject_mutually_recursive_functions() {
 #[test]
 fn should_reject_function_call_with_bad_arity() {
     let errs = graph_errors_for("
-        fn identity(x) = x
+        fn identity(x: u32) = x
         fn bad() = identity(1, 2)
     ").unwrap();
 

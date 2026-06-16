@@ -2,7 +2,7 @@ use crate::{
     ast::{
         ebnf_02::{Program, TopItem},
         ebnf_03::{ContextBlock, ContextItem},
-        ebnf_04::FnDef,
+        ebnf_04::{FnDef, Param, Type},
         ebnf_05::HashBlock,
         ebnf_06::{NodeDecl, NodeKind, PropValue, Property},
         ebnf_07::{WireDecl, WireEndpoint},
@@ -35,6 +35,7 @@ mod ebnf_02 {
             items: vec![TopItem::FnDef(FnDef {
                 name: "f".into(),
                 params: vec![],
+                return_type: Type::Unit,
                 body: Expr::Integer(1),
             })],
         };
@@ -79,7 +80,7 @@ mod ebnf_04 {
 
     #[test]
     fn should_allow_fn_def_with_no_params() -> Result<(), String> {
-        let f = FnDef { name: "f".into(), params: vec![], body: Expr::Integer(0) };
+        let f = FnDef { name: "f".into(), params: vec![], return_type: Type::Unit, body: Expr::Integer(0) };
         if !f.params.is_empty() {
             return Err(format!("expected no params, got {}", f.params.len()));
         }
@@ -90,14 +91,18 @@ mod ebnf_04 {
     fn should_clone_fn_def_independently_of_original() -> Result<(), String> {
         let original = FnDef {
             name: "f".into(),
-            params: vec!["x".into(), "y".into()],
+            params: vec![
+                Param { name: "x".into(), ty: Type::U32 },
+                Param { name: "y".into(), ty: Type::U32 },
+            ],
+            return_type: Type::U32,
             body: Expr::Integer(1),
         };
         let mut clone = original.clone();
 
         // Mutate the clone's name and param list
         clone.name = "g".into();
-        clone.params.push("z".into());
+        clone.params.push(Param { name: "z".into(), ty: Type::U32 });
 
         if original.name != "f" {
             return Err(format!(

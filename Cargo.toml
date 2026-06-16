@@ -2,14 +2,29 @@
 name = "hash_visualiser"
 version = "0.1.0"
 edition = "2024"
+authors = ["Chris Whealy <chris@whealy.com>"]
+description = "A DSL-based tool for visualising the data flow through various hash algorithms"
+keywords = ["hash", "visualisation"]
+categories = ["wasm", "web-programming", "rendering"]
+repository = "https://github.com/ChrisWhealy/hash_visualiser"
+license = "MIT"
+
+[workspace]
+members = ["web-server"]
 
 [lib]
 name = "hash_visualiser"
+crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [[bin]]
 name = "hash_visualiser"
 path = "src/main.rs"
 
+[features]
+# Enables the browser/WebAssembly entry point (`src/web.rs`). Built via `wasm-pack build --target web --features web`.
+web = ["dep:wasm-bindgen"]
+
 [dependencies]
 svg-dom = { path = "../svg-dom" }
+wasm-bindgen = { version = "0.2", optional = true }

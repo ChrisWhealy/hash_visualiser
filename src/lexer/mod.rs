@@ -122,6 +122,10 @@ impl<'src> Lexer<'src> {
                 self.advance();
                 Ok(Token::Comma)
             }
+            ';' => {
+                self.advance();
+                Ok(Token::Semicolon)
+            }
             ':' => {
                 self.advance();
                 Ok(Token::Colon)

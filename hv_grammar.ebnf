@@ -108,9 +108,34 @@ word_size_decl ::= "word_size" ":" INTEGER ;
         the complete symbol table in second pass.
    ================================================================================================================== *)
 
-fn_def      ::= "fn" IDENT "(" [ param_list ] ")" "=" expr ;
+(* The optional "->" type declares the return type.  When omitted, the function returns UNIT (nothing). *)
+fn_def      ::= "fn" IDENT "(" [ typed_param_list ] ")" [ "->" type ] "=" expr ;
 
+(* Function parameters carry a type (see §4.1).  A trailing comma is permitted. *)
+typed_param_list ::= param { "," param } [ "," ] ;
+
+param       ::= IDENT ":" type ;
+
+(* The untyped binding list used by event handlers (§9), where each IDENT names an inbound event value. *)
 param_list  ::= IDENT { "," IDENT } ;
+
+
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §4.1  Parameter types
+
+   The type vocabulary is intentionally minimal for the PoC: the primitive unsigned integer types and type-safe
+   fixed-size arrays built from them (arbitrarily nested), e.g. [u16; 8] or [[u8; 5]; 5].
+
+   From a syntactical perspective, like the format specifiers in §6.1, the primitive type names are juts plain IDENTs
+   recognised only in by being in the `type` position; they are not reserved keywords.
+
+   The unit type (UNIT - "nothing") has no surface syntax: it is the return type of a function declared without a
+   "->" type annotation, and is therefore not part of the `type` rule below (it cannot appear as a parameter or
+   array-element type, nor be written explicitly as a return type).
+*)
+type           ::= primitive_type | array_type ;
+primitive_type ::= "u8" | "u16" | "u32" | "u64" ;
+array_type     ::= "[" type ";" INTEGER "]" ;
 
 
 (* =====================================================================================================================

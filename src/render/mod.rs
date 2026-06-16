@@ -2,7 +2,7 @@ mod layout;
 pub(crate) mod rect;
 
 use std::collections::HashMap;
-use svg_dom::{Error, SvgNode, SvgRoot};
+use svg_dom::{Error, SvgNode, SvgRoot, root::utils::Size};
 
 use crate::{
     ast::{
@@ -11,7 +11,7 @@ use crate::{
     },
     graph::ValidatedGraph,
 };
-use layout::{downstream, entry_point, exit_point, layout, upstream};
+use layout::{MARGIN, downstream, entry_point, exit_point, layout, upstream};
 use rect::Rect;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -24,6 +24,21 @@ use rect::Rect;
 pub struct Scene {
     pub nodes: HashMap<String, SvgNode>,
     pub wires: Vec<SvgNode>,
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Overall canvas size needed to contain the laid-out diagram, including a trailing margin.
+///
+/// Useful for sizing the `<svg>` viewport (e.g. via [`SvgRoot::create_in`](svg_dom::SvgRoot::create_in)) before
+/// rendering.
+pub fn diagram_size(graph: &ValidatedGraph) -> Size {
+    let placement = layout(graph);
+    let (mut max_x, mut max_y) = (0.0_f64, 0.0_f64);
+    for rect in placement.values() {
+        max_x = max_x.max(rect.top_left.x + rect.size.width);
+        max_y = max_y.max(rect.top_left.y + rect.size.height);
+    }
+    Size::new(max_x + MARGIN, max_y + MARGIN)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

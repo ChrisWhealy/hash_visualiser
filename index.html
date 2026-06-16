@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>hash-visualiser — SHA-256 round</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header id="title">
+        <h1>hash-visualiser</h1>
+        <p class="subtitle">
+            The built-in <code>.hv</code> example, parsed and rendered to live SVG directly in the browser DOM from
+            Rust/WebAssembly using the <code>svg-dom</code> crate.
+        </p>
+        <div id="error-banner"></div>
+    </header>
+
+    <main id="stage">
+        <!-- svg_dom::SvgRoot::create_in() appends a sized <svg> here -->
+        <div id="app" class="canvas"></div>
+    </main>
+
+    <script type="module">
+        import init, { run } from './pkg/hash_visualiser.js';
+
+        try {
+            await init();
+            run('app');
+        } catch (err) {
+            const banner = document.getElementById('error-banner');
+            banner.style.display = 'block';
+            banner.textContent = `Error: ${err}`;
+            console.error(err);
+        }
+    </script>
+</body>
+
+</html>

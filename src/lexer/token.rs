@@ -70,12 +70,13 @@ pub enum Token {
     RBrace,   // }
     LParen,   // (
     RParen,   // )
-    LBracket, // [
-    RBracket, // ]
-    Comma,    // ,
-    Question, // ?
-    Plus,     // +
-    Minus,    // -
+    LBracket,  // [
+    RBracket,  // ]
+    Comma,     // ,
+    Semicolon, // ;
+    Question,  // ?
+    Plus,      // +
+    Minus,     // -
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -101,6 +102,7 @@ impl std::fmt::Display for Token {
             Token::LBracket => write!(f, "`[`"),
             Token::RBracket => write!(f, "`]`"),
             Token::Comma => write!(f, "`,`"),
+            Token::Semicolon => write!(f, "`;`"),
             Token::Question => write!(f, "`?`"),
             Token::Plus => write!(f, "`+`"),
             Token::Minus => write!(f, "`-`"),

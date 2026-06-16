@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         ebnf_02::{Program, TopItem},
-        ebnf_04::FnDef,
+        ebnf_04::{FnDef, Param, Type},
         ebnf_06::{NodeDecl, NodeKind},
         ebnf_07::{WireDecl, WireEndpoint},
         ebnf_11::Expr,
@@ -40,7 +40,16 @@ fn named_wire(wire_name: &str, src: &str, dst: &str) -> TopItem {
 fn fn_def(name: &str, params: &[&str], body: Expr) -> TopItem {
     TopItem::FnDef(FnDef {
         name: name.into(),
-        params: params.iter().map(|s| s.to_string()).collect(),
+        // These tests only exercise arity and the call graph, so every parameter is given the same placeholder type
+        // and the return type is left as unit.
+        params: params
+            .iter()
+            .map(|s| Param {
+                name: s.to_string(),
+                ty: Type::U32,
+            })
+            .collect(),
+        return_type: Type::Unit,
         body,
     })
 }

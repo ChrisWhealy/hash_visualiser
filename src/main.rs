@@ -1,3 +1,5 @@
+use hash_visualiser::BUILTIN_EXAMPLE;
+
 fn main() {
     let src = match std::env::args().nth(1) {
         Some(path) => std::fs::read_to_string(&path)
@@ -10,79 +12,3 @@ fn main() {
         Err(e)      => { eprintln!("{e}"); std::process::exit(1) }
     }
 }
-
-// Exercises: context block, fn defs, hash block, node kinds, wire decls,
-// named wire, event handlers, all five effect types, expressions.
-const BUILTIN_EXAMPLE: &str = r#"
-context {
-    word_size: 32
-
-    fn Sigma(e, r1, r2, r3) = (e rotr_u r1) xor (e rotr_u r2) xor (e rotr_u r3)
-    fn sigma(x, r1, r2, s)  = (x rotr_u r1) xor (x rotr_u r2) xor (x shr_u s)
-    fn Ch(e, f, g)           = (e and f) xor ((not e) and g)
-    fn Maj(a, b, c)          = (a and b) xor (a and c) xor (b and c)
-}
-
-hash SHA256 {
-    context { word_size: 32 }
-
-    fn Sigma0(a) = Sigma(a, 2,  13, 22)
-    fn Sigma1(e) = Sigma(e, 6,  11, 25)
-    fn sigma0(x) = sigma(x, 7,  18,  3)
-    fn sigma1(x) = sigma(x, 17, 19, 10)
-
-    node a    : register  { label: "a", format: hex32 }
-    node e    : register  { label: "e", format: hex32 }
-    node k_i  : constant  { label: "Ki", format: hex32 }
-    node w_i  : constant  { label: "Wi", format: hex32 }
-    node s1   : operation { symbol: "Sigma1" }
-    node ch   : operation { symbol: "Ch" }
-    node t1   : operation { symbol: "+" }
-
-    layout: left_to_right
-
-    wire e   -> s1
-    wire e   -> ch
-    wire s1  -> t1
-    wire ch  -> t1
-    wire k_i -> t1
-    wire w_i -> t1
-
-    wire carry: ? -> a
-
-    s1 on receive(val) {
-        let result = Sigma1(val)
-        animate fill: pulse "steelblue" for 200ms
-        emit forward(result)
-    }
-
-    ch on receive(e_val, f_val, g_val) {
-        let result = Ch(e_val, f_val, g_val)
-        animate fill: pulse "teal" for 200ms
-        emit forward(result)
-    }
-
-    t1 on receive(s1_out, ch_out, w, k) {
-        set result = s1_out + ch_out + w + k
-        animate fill: pulse "gold" for 250ms
-        emit forward(result) via carry
-    }
-
-    a on receive(value) {
-        animate fill: pulse "coral" for 300ms
-        set label: value
-        emit propagate(value) -> all
-    }
-
-    node step_fwd  : button { label: "Step forward" }
-    node step_back : button { label: "Step back" }
-
-    step_fwd on click() {
-        emit step(1) -> all
-    }
-
-    step_back on click() {
-        emit step(0) -> all
-    }
-}
-"#;
