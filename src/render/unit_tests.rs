@@ -1,8 +1,12 @@
 use crate::{
     ast::ebnf_08::FlowDirection,
     graph::{ValidatedGraph, build},
-    render::layout::{LAYER_GAP, MARGIN, NODE_GAP, NODE_H, NODE_W, Rect, layout},
+    render::{
+        Rect,
+        layout::{LAYER_GAP, MARGIN, NODE_GAP, NODE_H, NODE_W, layout},
+    },
 };
+use svg_dom::root::utils::{Point, Size};
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // SvgNode creation needs a live browser DOM, so the rendering itself is exercised by the svg-dom crate's
@@ -27,11 +31,17 @@ fn should_place_one_node_per_layer_left_to_right() {
 
     assert_eq!(
         pos["a"],
-        Rect { x: MARGIN, y: MARGIN, w: NODE_W, h: NODE_H }
+        Rect {
+            top_left: Point::new(MARGIN, MARGIN),
+            size: Size::new(NODE_W, NODE_H)
+        }
     );
     assert_eq!(
         pos["b"],
-        Rect { x: MARGIN + NODE_W + LAYER_GAP, y: MARGIN, w: NODE_W, h: NODE_H }
+        Rect {
+            top_left: Point::new(MARGIN + NODE_W + LAYER_GAP, MARGIN),
+            size: Size::new(NODE_W, NODE_H)
+        }
     );
 }
 
@@ -50,11 +60,11 @@ fn should_stack_siblings_along_the_cross_axis() {
     );
     let pos = layout(&g);
 
-    assert_eq!(pos["a"].x, MARGIN);
-    assert_eq!(pos["b"].x, MARGIN);
-    assert_ne!(pos["a"].y, pos["b"].y);
-    assert_eq!(pos["b"].y - pos["a"].y, NODE_H + NODE_GAP);
-    assert_eq!(pos["c"].x, MARGIN + NODE_W + LAYER_GAP);
+    assert_eq!(pos["a"].top_left.x, MARGIN);
+    assert_eq!(pos["b"].top_left.x, MARGIN);
+    assert_ne!(pos["a"].top_left.y, pos["b"].top_left.y);
+    assert_eq!(pos["b"].top_left.y - pos["a"].top_left.y, NODE_H + NODE_GAP);
+    assert_eq!(pos["c"].top_left.x, MARGIN + NODE_W + LAYER_GAP);
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -72,8 +82,8 @@ fn should_reverse_main_axis_for_right_to_left() {
     let pos = layout(&g);
 
     // Source sits downstream (further right) of its target under right-to-left flow.
-    assert_eq!(pos["b"].x, MARGIN);
-    assert_eq!(pos["a"].x, MARGIN + NODE_W + LAYER_GAP);
+    assert_eq!(pos["b"].top_left.x, MARGIN);
+    assert_eq!(pos["a"].top_left.x, MARGIN + NODE_W + LAYER_GAP);
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -89,9 +99,9 @@ fn should_advance_main_axis_vertically_for_top_to_bottom() {
     );
     let pos = layout(&g);
 
-    assert_eq!(pos["a"].y, MARGIN);
-    assert_eq!(pos["b"].y, MARGIN + NODE_H + LAYER_GAP);
-    assert_eq!(pos["a"].x, pos["b"].x);
+    assert_eq!(pos["a"].top_left.y, MARGIN);
+    assert_eq!(pos["b"].top_left.y, MARGIN + NODE_H + LAYER_GAP);
+    assert_eq!(pos["a"].top_left.x, pos["b"].top_left.x);
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -1,7 +1,7 @@
 mod layout;
+pub(crate) mod rect;
 
 use std::collections::HashMap;
-
 use svg_dom::{Error, SvgNode, SvgRoot};
 
 use crate::{
@@ -11,14 +11,16 @@ use crate::{
     },
     graph::ValidatedGraph,
 };
-use layout::{Rect, downstream, entry_point, exit_point, layout, upstream};
+use layout::{downstream, entry_point, exit_point, layout, upstream};
+use rect::Rect;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Live SVG handles for everything a `.hv` program describes.
+/// Create live SVG handles for everything described in a `.hv` file.
 ///
-/// Every declared node becomes one [`SvgNode`] (a `<g>` wrapping a box and its label), keyed by node name, and every
-/// wire becomes a `<line>`.  Because each handle points at the real DOM element, callers can later attach the event
-/// handlers and animations declared in the source by looking a node up by name.
+/// Every declared node becomes a [`SvgNode`] (a `<g>` wrapping a box and its label), keyed by node name, and every wire
+/// becomes a `<line>`.  Since each handle points to a real DOM element, callers can later attach event handlers and
+/// animations declared in the source by looking a node up by name.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 pub struct Scene {
     pub nodes: HashMap<String, SvgNode>,
     pub wires: Vec<SvgNode>,
@@ -53,14 +55,13 @@ fn render_node(svg: &SvgRoot, decl: &NodeDecl, rect: Rect) -> Result<SvgNode, Er
     let group = svg.group()?;
     group.set_attr("data-node", &decl.name)?;
 
-    let box_ = svg.rect(rect.x, rect.y, rect.w, rect.h)?;
+    let box_ = svg.rect(rect.into(), rect.into())?;
     box_.set_fill(fill_for(&decl.kind))?;
     box_.set_stroke("black")?;
     box_.set_stroke_width(1.5)?;
     box_.set_attr("rx", "6")?;
 
-    let (cx, cy) = rect.center();
-    let label = svg.text(cx, cy, &node_label(decl))?;
+    let label = svg.text(rect.centre(), &node_label(decl))?;
     label.set_fill("white")?;
     label.set_attr("text-anchor", "middle")?;
     label.set_attr("dominant-baseline", "central")?;
@@ -86,7 +87,7 @@ fn render_wire(
     let src = node_rect(placement, &wire.source);
     let dst = node_rect(placement, &wire.target);
 
-    let (p1, p2) = match (src, dst) {
+    let (start_point, end_point) = match (src, dst) {
         (Some(s), Some(d)) => (exit_point(s, flow), entry_point(d, flow)),
         (Some(s), None) => {
             let start = exit_point(s, flow);
@@ -99,9 +100,10 @@ fn render_wire(
         (None, None) => return Ok(None),
     };
 
-    let line = svg.line(p1.0, p1.1, p2.0, p2.1)?;
+    let line = svg.line(start_point, end_point)?;
     line.set_stroke("#888888")?;
     line.set_stroke_width(2.0)?;
+
     if let Some(name) = &wire.name {
         line.set_attr("data-wire", name)?;
     }
