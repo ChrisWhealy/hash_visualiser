@@ -165,7 +165,14 @@ impl<'src> Lexer<'src> {
                     Ok(Token::Minus)
                 }
             }
-            '"' => self.scan_string(),
+            '"' => {
+                // A `"""` opener begins a multi-line (triple-quoted) string; a lone `"` a single-line one.
+                if self.peek(1) == Some('"') && self.peek(2) == Some('"') {
+                    self.scan_triple_string()
+                } else {
+                    self.scan_string()
+                }
+            }
             '0'..='9' => self.scan_number(),
             c if c.is_alphabetic() || c == '_' => self.scan_word(),
             c => Err(self.err(format!("unexpected character '{c}'"))),
@@ -188,6 +195,28 @@ impl<'src> Lexer<'src> {
         }
 
         Ok(Token::Str(s))
+    }
+
+    // A triple-quoted string: spans newlines and may contain lone `"`; terminated by the next `"""`. Used for
+    // multi-line values such as a node's markdown `description`.
+    fn scan_triple_string(&mut self) -> Result<Token, LexError> {
+        for _ in 0..3 {
+            self.advance(); // consume opening """
+        }
+        let mut s = String::new();
+
+        loop {
+            if self.peek(0) == Some('"') && self.peek(1) == Some('"') && self.peek(2) == Some('"') {
+                for _ in 0..3 {
+                    self.advance(); // consume closing """
+                }
+                return Ok(Token::Str(s));
+            }
+            match self.advance() {
+                Some(c) => s.push(c),
+                None => return Err(self.err("unterminated triple-quoted string")),
+            }
+        }
     }
 
     fn scan_number(&mut self) -> Result<Token, LexError> {

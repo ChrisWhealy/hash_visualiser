@@ -19,7 +19,8 @@
     </header>
 
     <main id="stage">
-        <!-- #diagram shrink-wraps to the diagram canvas, so the transport bar below can match its exact width. -->
+        <!-- #diagram shrink-wraps to the diagram canvas, so the description panel and transport bar can match its
+             exact width. -->
         <div id="diagram">
             <!-- svg_dom::SvgRoot::create_in() appends a sized <svg> here -->
             <div id="app" class="canvas"></div>
@@ -27,27 +28,37 @@
             <!-- Transport bar: svg_dom::SvgRoot::create_in("transport", ...) appends the step buttons here.
                  Fills #diagram, so it lines up with the canvas above it. -->
             <footer id="transport"></footer>
+
+            <!-- Clicking a node with a `description` toggles its rendered markdown into this panel, which sits above
+                 the canvas. It's empty until a node is clicked and is hidden while empty (CSS :empty). -->
+            <aside id="description" class="docs"></aside>
         </div>
     </main>
 
     <script type="module">
         import init, { run } from './pkg/hash_visualiser.js';
 
-        // The .hv source is fetched at runtime and polled for changes, so editing the file re-renders the diagram
-        // live — no wasm rebuild or server restart needed.
-        const HV_URL = '/hv/sha3.hv';
-        const POLL_MS = 1000;
+        // The server watches the .hv file and pushes its source over a Server-Sent Events stream, so the diagram
+        // re-renders live on every edit — no polling and no traffic between edits (and no wasm rebuild or restart).
+        const EVENTS_URL = '/events';
 
         const app = document.getElementById('app');
         const transport = document.getElementById('transport');
         const banner = document.getElementById('error-banner');
+        const description = document.getElementById('description');
 
         let lastSource = null;
 
         function render(source) {
+            if (source === lastSource) return; // unchanged since last render
+            lastSource = source;
+
             // Clear the previous render before drawing afresh (run() appends new <svg> elements).
             app.innerHTML = '';
             transport.innerHTML = '';
+            // A stale description may no longer match the edited source: hide it (and forget which node it showed).
+            description.innerHTML = '';
+            description.removeAttribute('data-shown');
             try {
                 run('app', source);
                 banner.style.display = 'none';
@@ -59,21 +70,13 @@
             }
         }
 
-        async function poll() {
-            let source;
-            try {
-                source = await fetch(HV_URL, { cache: 'no-store' }).then(r => r.text());
-            } catch (e) {
-                return; // transient fetch failure — try again next tick
-            }
-            if (source === lastSource) return; // unchanged since last render
-            lastSource = source;
-            render(source);
-        }
-
         await init();
-        await poll();                  // initial render
-        setInterval(poll, POLL_MS);    // live reload on file change
+
+        // EventSource delivers the current source on connect, then a fresh message on every file change; it also
+        // reconnects automatically if the connection drops.
+        const events = new EventSource(EVENTS_URL);
+        events.onmessage = (e) => render(e.data);
+        events.onerror = () => console.warn('live-reload stream interrupted; reconnecting…');
     </script>
 </body>
 

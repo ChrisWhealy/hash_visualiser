@@ -28,3 +28,9 @@ web = ["dep:wasm-bindgen"]
 [dependencies]
 svg-dom = { path = "../svg-dom" }
 wasm-bindgen = { version = "0.2", optional = true }
+
+# Markdown → HTML for node `description` properties (pure Rust, compiles to wasm and native).
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+
+# Direct DOM access for pushing rendered description HTML into the page's panel.
+web-sys = { version = "0.3", features = ["Window", "Document", "Element"] }

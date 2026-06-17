@@ -91,3 +91,56 @@ code {
     padding: 0.5rem;
     overflow: auto;
 }
+
+/* Panel showing a node's rendered markdown description (toggled by clicking the node). Sits above the canvas; as a
+   block child of the shrink-wrapped #diagram it fills that width, matching the canvas (#app) below it exactly. */
+#description.docs {
+    display: block;
+    width: 100%;
+    margin-top: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--ink);
+    line-height: 1.5;
+}
+
+/* Hidden until a node with a description is clicked (and again when toggled off). Must follow the rule above so the
+   equal-specificity :empty selector wins when the panel is empty. */
+#description:empty {
+    display: none;
+}
+
+#description.docs :first-child {
+    margin-top: 0;
+}
+
+#description.docs h1,
+#description.docs h2,
+#description.docs h3 {
+    line-height: 1.25;
+}
+
+#description.docs code {
+    background: rgba(109, 179, 242, 0.12);
+    color: var(--accent);
+    padding: 0.05em 0.35em;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+#description.docs pre {
+    background: #0f1420;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    overflow: auto;
+}
+
+/* Code inside a fenced block: plain, not the inline-code pill. */
+#description.docs pre code {
+    background: none;
+    color: var(--ink);
+    padding: 0;
+}

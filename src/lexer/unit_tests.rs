@@ -257,6 +257,25 @@ fn should_get_string_literal_with_unicode_content() -> Result<(), String> {
     eq(lex("\"Step →\"")?, vec![Token::Str("Step →".into())])
 }
 
+#[test]
+fn should_get_triple_quoted_multiline_string() -> Result<(), String> {
+    // Spans newlines and may contain lone double-quotes and backticks (e.g. markdown).
+    eq(
+        lex("\"\"\"line 1\nuses `code` and a \" quote\nline 3\"\"\"")?,
+        vec![Token::Str("line 1\nuses `code` and a \" quote\nline 3".into())],
+    )
+}
+
+#[test]
+fn should_get_empty_triple_quoted_string() -> Result<(), String> {
+    eq(lex("\"\"\"\"\"\"")?, vec![Token::Str(String::new())])
+}
+
+#[test]
+fn should_error_on_unterminated_triple_quoted_string() -> Result<(), String> {
+    msg_contains(&expect_lex_err("\"\"\"never closed")?, "unterminated")
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // §1  Duration
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

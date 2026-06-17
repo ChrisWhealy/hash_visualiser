@@ -2,9 +2,9 @@ use crate::{
     ast::{ebnf_08::FlowDirection, ebnf_11::BinOp},
     graph::{ValidatedGraph, build},
     render::{
-        Rect, apply_reduce, cell_width, effective_matrix, expr_label, format_cell, grid_size,
-        grid_spec, inferred_grid_shape, op_symbol, reduction_label_source, reduction_op, step_back,
-        step_forward, step_range,
+        Rect, apply_reduce, cell_width, description_html, effective_matrix, expr_label, format_cell,
+        grid_size, grid_spec, inferred_grid_shape, op_symbol, reduction_label_source, reduction_op,
+        step_back, step_forward, step_range,
         layout::{LAYER_GAP, MARGIN, NODE_GAP, NODE_H, NODE_W, layout},
     },
 };
@@ -459,4 +459,41 @@ fn should_find_reduction_via_compute_without_a_wire() -> Result<(), String> {
     eq(inferred_grid_shape("state", &g), Some((5, 5)))?;
     let (var, _) = reduction_label_source("state", &g).ok_or("expected reduction found via compute")?;
     eq(var.as_str(), "x")
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Node descriptions: a node's markdown `description` is rendered to HTML for the docs panel.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_render_node_description_markdown_to_html() -> Result<(), String> {
+    let g = parse_and_build(
+        "
+        node c : operation {
+            symbol: \"ThetaC\",
+            description: \"\"\"
+# Theta-C
+
+XOR the five lanes via `theta_c`.
+
+```rust
+fn theta_c() {}
+```
+\"\"\"
+        }
+    ",
+    );
+
+    let html = description_html(&g.nodes["c"]).ok_or("expected a rendered description")?;
+    check(html.contains("<h1>"), "heading should render to <h1>")?;
+    check(html.contains("<code>theta_c</code>"), "inline code should render")?;
+    check(html.contains("<pre><code"), "fenced block should render to <pre><code>")
+}
+
+#[test]
+fn should_have_no_description_html_when_absent() -> Result<(), String> {
+    let g = parse_and_build("node plain : register { format: hex8 }");
+    check(
+        description_html(&g.nodes["plain"]).is_none(),
+        "a node without a description should produce no HTML",
+    )
 }

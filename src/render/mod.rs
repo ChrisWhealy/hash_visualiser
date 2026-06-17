@@ -53,8 +53,11 @@ const HILITE_FILL: &str = "#6db3f2"; // background of the row currently being pr
 
 const MEDIUM_GREY: &str = "#888888";
 const DEEP_SLATE_BLUE: &str = "#2a3650";
-const SKY_BLUE: &str = "#6db3f2";
 const PALE_BLUE_GREY: &str = "#e6ecf5";
+const LIGHT_BLACK: &str = "#111111";
+
+/// Inset (px) of the "ⓘ" description badge from a node's top-right corner.
+const DESC_ICON_INSET: f64 = 12.0;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Create live SVG handles for everything described in a `.hv` file.
@@ -145,6 +148,7 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
         if let Some(spec) = grids.get(name) {
             let origin: Point = (*rect).into();
             let (group, cells) = render_array_node(svg, decl, origin, spec)?;
+            attach_description(svg, &group, decl, *rect)?;
             nodes.insert(name.clone(), group);
 
             let grid_bottom = origin.y + rect.size.height;
@@ -179,7 +183,9 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
             max_x = max_x.max(bottom_right.x);
             max_y = max_y.max(bottom_right.y);
         } else {
-            nodes.insert(name.clone(), render_node(svg, decl, *rect)?);
+            let group = render_node(svg, decl, *rect)?;
+            attach_description(svg, &group, decl, *rect)?;
+            nodes.insert(name.clone(), group);
         }
     }
 
@@ -293,6 +299,65 @@ fn node_label(decl: &NodeDecl) -> String {
         }
     }
     decl.name.clone()
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Renders a node's markdown `description` (if any) to HTML.
+fn description_html(decl: &NodeDecl) -> Option<String> {
+    let markdown = decl.properties.iter().find(|p| p.name == "description").and_then(|p| match &p.value {
+        PropValue::Str(s) => Some(s.as_str()),
+        _ => None,
+    })?;
+
+    let parser = pulldown_cmark::Parser::new_ext(markdown, pulldown_cmark::Options::all());
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, parser);
+    Some(html)
+}
+
+/// If `decl` has a `description`, makes the node clickable, marks it with a small "ⓘ" badge at its top-right corner
+/// (so described nodes are discoverable), and toggles the rendered markdown in the page's `#description` panel when
+/// clicked.
+fn attach_description(svg: &SvgRoot, group: &SvgNode, decl: &NodeDecl, rect: Rect) -> Result<(), Error> {
+    if let Some(html) = description_html(decl) {
+        group.set_attr("style", "cursor: pointer")?;
+
+        // Discoverability badge, just inside the node's top-right corner.
+        let badge = svg.text(
+            Point::new(rect.top_left.x + rect.size.width - DESC_ICON_INSET, rect.top_left.y + DESC_ICON_INSET),
+            "ⓘ",
+        )?;
+        badge.set_fill(LIGHT_BLACK)?;
+        badge.set_attr("text-anchor", "middle")?;
+        badge.set_attr("dominant-baseline", "central")?;
+        badge.set_attr("font-family", "sans-serif")?;
+        badge.set_attr("font-size", "14")?;
+        group.append(&badge)?;
+
+        let node = decl.name.clone();
+        group.on_click(move |_| toggle_description(&node, &html))?;
+    }
+    Ok(())
+}
+
+/// Toggles `node`'s rendered `html` in the page's `#description` panel: shows it, or hides it (clears the panel) if that
+/// same node's description is already showing. The currently-shown node is tracked via the panel's `data-shown`
+/// attribute. A no-op outside the browser (no window/document).
+fn toggle_description(node: &str, html: &str) {
+    let Some(panel) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("description"))
+    else {
+        return;
+    };
+
+    if panel.get_attribute("data-shown").as_deref() == Some(node) {
+        panel.set_inner_html("");
+        let _ = panel.remove_attribute("data-shown");
+    } else {
+        panel.set_inner_html(html);
+        let _ = panel.set_attribute("data-shown", node);
+    }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -974,7 +1039,7 @@ fn render_reduction(
     for c in 1..cols {
         let box_ = svg.rect(Point::new(col_x(c), op_y), Size::new(cell_w, cell_h))?;
         box_.set_fill(DEEP_SLATE_BLUE)?;
-        box_.set_stroke(SKY_BLUE)?;
+        box_.set_stroke(HILITE_FILL)?;
         box_.set_stroke_width(1.0)?;
         box_.set_attr("rx", "4")?;
 
@@ -1123,7 +1188,7 @@ fn make_button(svg: &SvgRoot, origin: Point, label: &str) -> Result<SvgNode, Err
 
     let rect = svg.rect(origin, Size::new(BTN_W, BTN_H))?;
     rect.set_fill(DEEP_SLATE_BLUE)?;
-    rect.set_stroke(SKY_BLUE)?;
+    rect.set_stroke(HILITE_FILL)?;
     rect.set_stroke_width(1.0)?;
     rect.set_attr("rx", "6")?;
     group.append(&rect)?;

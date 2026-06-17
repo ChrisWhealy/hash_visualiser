@@ -28,7 +28,25 @@ hash SHA3 {
     ]
 
     node state : register  { label: "State", format: hex64, source: InputData }
-    node c     : operation { symbol: "ThetaC", compute: ThetaC(state) }
+    node c     : operation {
+        symbol: "ThetaC",
+        compute: ThetaC(state),
+        description: """
+# Theta-C
+
+For each column `x`, XOR all five lanes in that column down to a single `u64` parity value.
+
+```rust
+fn theta_c(state: &[[u64; 5]; 5]) -> [u64; 5] {
+    let mut c = [0u64; 5];
+    for x in 0..5 {
+        c[x] = state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4];
+    }
+    c
+}
+```
+"""
+    }
 
     layout: left_to_right
 
