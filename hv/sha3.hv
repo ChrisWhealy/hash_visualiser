@@ -17,11 +17,11 @@
 // A function that is missing the `-> type` declaration returns UNIT.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 hash SHA3 {
-    context { word_size: 8 }
+    context { word_size: 64 }
 
-    fn ThetaC(a: [[u8; 5]; 5]) -> [u8; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+    fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
 
-    node state : register  { label: "A", format: hex8 }
+    node state : register  { label: "State", format: hex64 }
     node c     : operation { symbol: "ThetaC" }
 
     layout: left_to_right
