@@ -58,9 +58,29 @@ code {
 }
 
 #stage {
-    padding: 1rem 2rem 3rem;
+    padding: 1rem 2rem 1rem;
     max-width: 70rem;
     margin: 0 auto;
+}
+
+/* Shrink-to-fit column around the canvas and the transport bar, so the bar can be exactly as wide as the canvas
+   (which itself shrink-wraps the diagram and may be wider than #stage's content box). */
+#diagram {
+    display: inline-block;
+}
+
+/* Transport bar holding the step buttons. As the only block child of #diagram it fills that shrink-wrapped width,
+   matching the canvas (#app) above it exactly; it floats just below with a small gap. */
+#transport {
+    width: 100%;
+    margin-top: 1rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
 }
 
 .canvas {

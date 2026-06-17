@@ -19,8 +19,15 @@
     </header>
 
     <main id="stage">
-        <!-- svg_dom::SvgRoot::create_in() appends a sized <svg> here -->
-        <div id="app" class="canvas"></div>
+        <!-- #diagram shrink-wraps to the diagram canvas, so the transport bar below can match its exact width. -->
+        <div id="diagram">
+            <!-- svg_dom::SvgRoot::create_in() appends a sized <svg> here -->
+            <div id="app" class="canvas"></div>
+
+            <!-- Transport bar: svg_dom::SvgRoot::create_in("transport", ...) appends the step buttons here.
+                 Fills #diagram, so it lines up with the canvas above it. -->
+            <footer id="transport"></footer>
+        </div>
     </main>
 
     <script type="module">

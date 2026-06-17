@@ -1,8 +1,10 @@
 use crate::{
-    ast::ebnf_08::FlowDirection,
+    ast::{ebnf_08::FlowDirection, ebnf_11::BinOp},
     graph::{ValidatedGraph, build},
     render::{
-        Rect,
+        Rect, apply_reduce, cell_width, effective_matrix, expr_label, format_cell, grid_size,
+        grid_spec, inferred_grid_shape, op_symbol, reduction_label_source, reduction_op, step_back,
+        step_forward, step_range,
         layout::{LAYER_GAP, MARGIN, NODE_GAP, NODE_H, NODE_W, layout},
     },
 };
@@ -138,13 +140,15 @@ fn should_place_every_declared_node() -> Result<(), String> {
 
     // Includes the isolated node `c`, which has no wires.
     eq(pos.len(), g.nodes.len())?;
-    check(pos.contains_key("c"), "expected isolated node 'c' to be placed")
+    check(
+        pos.contains_key("c"),
+        "expected isolated node 'c' to be placed",
+    )
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Array-grid shape inference (the pure half of the grid renderer; cell drawing needs a DOM).
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-use crate::render::inferred_grid_shape;
 
 #[test]
 fn should_infer_grid_shape_from_wired_function_param() -> Result<(), String> {
@@ -217,8 +221,6 @@ fn should_not_infer_grid_for_unwired_node() -> Result<(), String> {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Cell sizing/formatting driven by the node's format specifier.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-use crate::render::{cell_width, format_cell, grid_size, grid_spec};
-
 #[test]
 fn should_size_cells_and_values_by_format_width() -> Result<(), String> {
     // Cell width scales with the measured monospace advance; here we pass a representative `ch`.
@@ -269,8 +271,10 @@ fn should_derive_grid_spec_cell_width_from_hex64_format() -> Result<(), String> 
     // Cell height and inter-cell gap are derived from the measured `ch`, not hard-coded pixels.
     eq(spec.cell_h, 3.5 * ch)?;
     eq(spec.cell_gap, ch)?;
+
     // Doubling the font metric doubles those metrics.
-    let bigger = grid_spec("state", &g.nodes["state"], &g, 2.0 * ch).ok_or("state should be a grid")?;
+    let bigger =
+        grid_spec("state", &g.nodes["state"], &g, 2.0 * ch).ok_or("state should be a grid")?;
     eq(bigger.cell_h, 2.0 * spec.cell_h)?;
     eq(bigger.cell_gap, 2.0 * spec.cell_gap)
 }
@@ -278,8 +282,6 @@ fn should_derive_grid_spec_cell_width_from_hex64_format() -> Result<(), String> 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Step-button range: clamped to the comprehension's range, no wrap-around.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-use crate::render::{step_back, step_forward, step_range};
-
 #[test]
 fn should_derive_step_range_from_comprehension() -> Result<(), String> {
     let g = parse_and_build(
@@ -357,4 +359,83 @@ fn should_take_grid_values_and_shape_from_declared_data() -> Result<(), String> 
     // Shape comes from the 2x3 data literal, not the 5x5 function parameter type.
     eq((spec.rows, spec.cols), (2, 3))?;
     eq(spec.values, Some(vec![vec![1, 2, 3], vec![4, 5, 6]]))
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Inner reduction visualisation — pure helpers (the SVG fold diagram itself needs a DOM).
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_extract_reduction_op_from_comprehension() -> Result<(), String> {
+    let g = parse_and_build(
+        "
+        hash SHA3 {
+            fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+            node state : register  { format: hex64 }
+            node c     : operation { symbol: \"ThetaC\" }
+            wire state -> c
+        }
+    ",
+    );
+
+    eq(reduction_op("state", &g), Some(BinOp::Xor))
+}
+
+#[test]
+fn should_left_fold_the_reduction() -> Result<(), String> {
+    eq(
+        apply_reduce(&BinOp::Xor, &[0x1, 0x2, 0x3]),
+        Some(0x1 ^ 0x2 ^ 0x3),
+    )?; // == 0
+    eq(apply_reduce(&BinOp::Add, &[10, 20, 12]), Some(42))?;
+    eq(apply_reduce(&BinOp::Xor, &[0x5]), Some(0x5))?; // single element folds to itself
+    check(
+        apply_reduce(&BinOp::Xor, &[]).is_none(),
+        "an empty row has no reduction",
+    )
+}
+
+#[test]
+fn should_label_reduction_operators() -> Result<(), String> {
+    eq(op_symbol(&BinOp::Xor), "xor")?;
+    eq(op_symbol(&BinOp::And), "and")?;
+    eq(op_symbol(&BinOp::Or), "or")?;
+    eq(op_symbol(&BinOp::Add), "+")
+}
+
+#[test]
+fn should_use_declared_data_as_the_effective_matrix() -> Result<(), String> {
+    let g = parse_and_build(
+        "
+        hash SHA3 {
+            fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+            data A = [[0x1, 0x2], [0x3, 0x4]]
+            node state : register  { format: hex64, source: A }
+            node c     : operation { symbol: \"ThetaC\", compute: ThetaC(state) }
+            wire state -> c
+        }
+    ",
+    );
+
+    let spec = grid_spec("state", &g.nodes["state"], &g, 7.5).ok_or("state should be a grid")?;
+    eq(effective_matrix(&spec), vec![vec![1u64, 2], vec![3, 4]])
+}
+
+#[test]
+fn should_label_working_row_with_substituted_index() -> Result<(), String> {
+    let g = parse_and_build(
+        "
+        hash SHA3 {
+            fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+            node state : register  { format: hex64 }
+            node c     : operation { symbol: \"ThetaC\" }
+            wire state -> c
+        }
+    ",
+    );
+
+    let (var, expr) = reduction_label_source("state", &g).ok_or("expected a comprehension reduction")?;
+    eq(var.as_str(), "x")?;
+    // The `over` operand `a[x]`, with the index variable bound to the current row.
+    eq(expr_label(&expr, &var, 0), "a[0]")?;
+    eq(expr_label(&expr, &var, 3), "a[3]")
 }

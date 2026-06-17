@@ -12,7 +12,7 @@ use crate::{
         ebnf_04::{FnDef, Type},
         ebnf_06::{NodeDecl, NodeKind, PropValue},
         ebnf_07::{WireDecl, WireEndpoint},
-        ebnf_11::Expr,
+        ebnf_11::{BinOp, Expr},
     },
     graph::ValidatedGraph,
 };
@@ -29,6 +29,11 @@ const GRID_LABEL_BASELINE: f64 = 0.6; // label baseline within that band, as a f
 const BTN_W: f64 = 120.0;
 const BTN_H: f64 = 28.0;
 const BTN_GAP: f64 = 12.0;
+
+// Transport bar (the `#transport` element) that holds the step buttons; sized to fit the two buttons.
+const TRANSPORT_H: f64 = 56.0;
+const TRANSPORT_PAD: f64 = 16.0;
+const TRANSPORT_W: f64 = TRANSPORT_PAD * 2.0 + BTN_W * 2.0 + BTN_GAP;
 
 // Cell metrics are expressed as multiples of the monospace advance ("ch"), which is measured at render time (see
 // `measure_char`) rather than hard-coded, so spacing tracks the actual font.
@@ -124,9 +129,13 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
 
     let mut nodes = HashMap::with_capacity(graph.nodes.len());
     let mut controls = Vec::new();
-    // Track the bottom-right of everything actually drawn: grids and their step buttons can extend well beyond the
-    // node box, so we fit the viewport to the real content at the end.
+    // Track the bottom-right of everything actually drawn: grids can extend well beyond the node box, so we fit the
+    // viewport to the real content at the end.
     let (mut max_x, mut max_y) = (0.0_f64, 0.0_f64);
+
+    // The step buttons live in a fixed transport bar (`#transport`) when the page provides one; otherwise they fall
+    // back to sitting below the diagram.
+    let transport = SvgRoot::create_in("transport", Size::new(TRANSPORT_W, TRANSPORT_H)).ok();
 
     for (name, rect) in &placement {
         let decl = &graph.nodes[name];
@@ -136,12 +145,39 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
         if let Some(spec) = grids.get(name) {
             let origin: Point = (*rect).into();
             let (group, cells) = render_array_node(svg, decl, origin, spec)?;
-
-            let btn_origin = Point::new(origin.x, origin.y + rect.size.height + BTN_GAP);
-            controls.extend(render_step_controls(svg, btn_origin, spec.step_range, cells)?);
-
             nodes.insert(name.clone(), group);
-            max_y = max_y.max(btn_origin.y + BTN_H);
+
+            let grid_bottom = origin.y + rect.size.height;
+
+            // When the node feeds a `reduce`, visualise the inner fold below the grid; otherwise just the step buttons.
+            let (mut ctrls, bottom_right) = match reduction_op(name, graph) {
+                Some(op) => {
+                    let matrix = effective_matrix(spec);
+                    let label_source = reduction_label_source(name, graph);
+                    render_reduction(
+                        svg,
+                        transport.as_ref(),
+                        spec,
+                        &matrix,
+                        &op,
+                        label_source,
+                        origin,
+                        grid_bottom,
+                        cells,
+                    )?
+                }
+                None => {
+                    let btn_origin = Point::new(origin.x, grid_bottom + BTN_GAP);
+                    (
+                        render_step_controls(svg, btn_origin, spec.step_range, cells)?,
+                        Point::new(origin.x + spec.cell_w, btn_origin.y + BTN_H),
+                    )
+                }
+            };
+
+            controls.append(&mut ctrls);
+            max_x = max_x.max(bottom_right.x);
+            max_y = max_y.max(bottom_right.y);
         } else {
             nodes.insert(name.clone(), render_node(svg, decl, *rect)?);
         }
@@ -283,9 +319,9 @@ fn wired_function<'a>(name: &str, graph: &'a ValidatedGraph) -> Option<&'a FnDef
 ///
 /// A node is drawn as a grid when it is the source of a wire into an `operation` node whose `symbol` names a function
 /// whose first parameter is a 2D array type, e.g. `[[u64; 5]; 5]`.
-/// 
-/// The DSL carries no node data yet, so this is the only way the renderer learns a node's shape. Returns `None` for
-/// ordinary scalar nodes.
+///
+/// This is the fallback shape source: when a node declares its own `data` (via a `source` property), `grid_spec` takes
+/// the shape directly from that literal instead. Returns `None` for ordinary scalar nodes.
 fn inferred_grid_shape(name: &str, graph: &ValidatedGraph) -> Option<(usize, usize)> {
     match &wired_function(name, graph)?.params.first()?.ty {
         Type::Array { element, len: rows } => match element.as_ref() {
@@ -383,6 +419,7 @@ fn grid_spec(name: &str, decl: &NodeDecl, graph: &ValidatedGraph, ch: f64) -> Op
     })
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Resolves a node's declared data to a 2D matrix of values: follows its `source: NAME` property to the data binding
 /// and interprets the bound array-of-arrays literal. `None` if the node has no `source` or the binding is not 2D.
 fn node_data_matrix(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<Vec<Vec<u64>>> {
@@ -399,11 +436,139 @@ fn node_data_matrix(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<Vec<Vec<u
         .collect::<Option<Vec<Vec<u64>>>>()
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// The numeric value of an integer or hex literal expression.
 fn literal_u64(expr: &Expr) -> Option<u64> {
     match expr {
         Expr::Integer(n) | Expr::HexLit(n) => Some(*n),
         _ => None,
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Inner reduction (`reduce <op> over a[x]`) — pure helpers used by its visualisation.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+/// The grid's values as a full matrix: the declared data if present, otherwise the placeholder spread.
+fn effective_matrix(spec: &GridSpec) -> Vec<Vec<u64>> {
+    spec.values.clone().unwrap_or_else(|| {
+        (0..spec.rows)
+            .map(|r| (0..spec.cols).map(|c| placeholder_value(r * spec.cols + c)).collect())
+            .collect()
+    })
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// The reduction operator of the (first) `reduce` in the function `name` feeds, if any — e.g. `Xor` for `reduce xor`.
+fn reduction_op(name: &str, graph: &ValidatedGraph) -> Option<BinOp> {
+    find_reduction_op(&wired_function(name, graph)?.body)
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+fn find_reduction_op(expr: &Expr) -> Option<BinOp> {
+    match expr {
+        Expr::Reduce { op, .. } => Some(op.clone()),
+        Expr::Comprehension { body, .. } => find_reduction_op(body),
+        Expr::Not(inner) => find_reduction_op(inner),
+        Expr::Index { base, index } => {
+            find_reduction_op(base).or_else(|| find_reduction_op(index))
+        }
+        Expr::BinOp { lhs, rhs, .. } => {
+            find_reduction_op(lhs).or_else(|| find_reduction_op(rhs))
+        }
+        Expr::Call { args, .. } => args.iter().find_map(find_reduction_op),
+        Expr::Array(elems) => elems.iter().find_map(find_reduction_op),
+        Expr::Integer(_) | Expr::HexLit(_) | Expr::Ident(_) => None,
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Left-folds `values` with the reduction operator, matching the comprehension semantics (`w0 op w1 op …`).
+/// `None` for an empty row or a non-associative operator (the latter is already rejected by the parser).
+fn apply_reduce(op: &BinOp, values: &[u64]) -> Option<u64> {
+    let f: fn(u64, u64) -> u64 = match op {
+        BinOp::Xor => |a, b| a ^ b,
+        BinOp::And => |a, b| a & b,
+        BinOp::Or => |a, b| a | b,
+        BinOp::Add => |a, b| a.wrapping_add(b),
+        _ => return None,
+    };
+    values.iter().copied().reduce(f)
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Display glyph for a reduction operator, shown in the operation-row boxes.
+fn op_symbol(op: &BinOp) -> &'static str {
+    match op {
+        BinOp::Xor => "xor",
+        BinOp::And => "and",
+        BinOp::Or => "or",
+        BinOp::Add => "+",
+        _ => "?",
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Source for the working-row label: the index variable of the (first) comprehension and the expression that its
+/// reduction folds over (the operand after `over`), e.g. `("x", a[x])` for `[ for x in 0..5 => reduce xor over a[x] ]`.
+fn reduction_label_source(name: &str, graph: &ValidatedGraph) -> Option<(String, Expr)> {
+    find_comprehension_detail(&wired_function(name, graph)?.body)
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+fn find_comprehension_detail(expr: &Expr) -> Option<(String, Expr)> {
+    match expr {
+        Expr::Comprehension { var, body, .. } => reduce_array(body).map(|arr| (var.clone(), arr)),
+        Expr::Reduce { array, .. } => find_comprehension_detail(array),
+        Expr::Not(inner) => find_comprehension_detail(inner),
+        Expr::Index { base, index } => {
+            find_comprehension_detail(base).or_else(|| find_comprehension_detail(index))
+        }
+        Expr::BinOp { lhs, rhs, .. } => {
+            find_comprehension_detail(lhs).or_else(|| find_comprehension_detail(rhs))
+        }
+        Expr::Call { args, .. } => args.iter().find_map(find_comprehension_detail),
+        Expr::Array(elems) => elems.iter().find_map(find_comprehension_detail),
+        Expr::Integer(_) | Expr::HexLit(_) | Expr::Ident(_) => None,
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// The operand a reduction folds over (the expression after `over`).
+fn reduce_array(expr: &Expr) -> Option<Expr> {
+    match expr {
+        Expr::Reduce { array, .. } => Some((**array).clone()),
+        _ => None,
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Renders an expression to a label string, substituting the index variable `var` with the concrete `value`.
+/// e.g. `a[x]` with `var = "x"`, `value = 2` becomes `"a[2]"`.
+fn expr_label(expr: &Expr, var: &str, value: usize) -> String {
+    match expr {
+        Expr::Ident(s) if s == var => value.to_string(),
+        Expr::Ident(s) => s.clone(),
+        Expr::Integer(n) => n.to_string(),
+        Expr::HexLit(n) => format!("0x{n:x}"),
+        Expr::Index { base, index } => {
+            format!("{}[{}]", expr_label(base, var, value), expr_label(index, var, value))
+        }
+        Expr::Call { name, args } => {
+            let inner: Vec<String> = args.iter().map(|a| expr_label(a, var, value)).collect();
+            format!("{name}({})", inner.join(", "))
+        }
+        Expr::BinOp { op, lhs, rhs } => format!(
+            "{} {op} {}",
+            expr_label(lhs, var, value),
+            expr_label(rhs, var, value)
+        ),
+        Expr::Not(inner) => format!("not {}", expr_label(inner, var, value)),
+        Expr::Array(elems) => {
+            let inner: Vec<String> = elems.iter().map(|e| expr_label(e, var, value)).collect();
+            format!("[{}]", inner.join(", "))
+        }
+        Expr::Comprehension { .. } | Expr::Reduce { .. } => "…".to_string(),
     }
 }
 
@@ -492,12 +657,14 @@ fn format_value(value: u64, digits: usize) -> String {
         .join(" ")
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Placeholder cell value used when a node declares no data: a deterministic spread so the full cell width is visibly
 /// used.
 fn placeholder_value(index: usize) -> u64 {
     (index as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Convenience wrapper kept for tests: the placeholder value for `index`, formatted for `digits`.
 #[cfg(test)]
 fn format_cell(index: usize, digits: usize) -> String {
@@ -531,8 +698,9 @@ fn ident_prop(decl: &NodeDecl, key: &str) -> Option<String> {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Draws the table described by `spec` anchored at `origin`, with the node label above it.
 ///
-/// Cell values are placeholders since the DSL cannot yet carry node data. Returns the node group and the cell handles
-/// grouped by row, so the caller can re-colour a row to highlight it.
+/// Each cell shows the node's declared data value (`spec.values`, from its `data`/`source`) when present, otherwise a
+/// placeholder. Returns the node group and the cell handles grouped by row, so the caller can re-colour a row to
+/// highlight it.
 fn render_array_node(
     svg: &SvgRoot,
     decl: &NodeDecl,
@@ -658,6 +826,236 @@ fn render_step_controls(
     }
 
     Ok(vec![back, fwd])
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Draws a value cell (rect + centred, byte-spaced text) and returns the (rect, text) handles.
+fn draw_value_cell(
+    svg: &SvgRoot,
+    top_left: Point,
+    size: Size,
+    content: &str,
+) -> Result<(SvgNode, SvgNode), Error> {
+    let rect = svg.rect(top_left, size)?;
+    rect.set_fill(CELL_FILL)?;
+    rect.set_stroke(CELL_STROKE)?;
+    rect.set_stroke_width(1.0)?;
+
+    let text = svg.text(
+        Point::new(top_left.x + size.width / 2.0, top_left.y + size.height / 2.0),
+        content,
+    )?;
+    text.set_fill(CELL_TEXT)?;
+    text.set_attr("text-anchor", "middle")?;
+    text.set_attr("dominant-baseline", "central")?;
+    text.set_attr("font-family", CELL_FONT_FAMILY)?;
+    text.set_attr("font-size", CELL_FONT_SIZE)?;
+    text.set_attr("style", &format!("word-spacing: {}ch", BYTE_GAP_CH - 1.0))?;
+
+    Ok((rect, text))
+}
+
+/// Which way a Step button moves the reduction cursor.
+#[derive(Clone, Copy)]
+enum StepAction {
+    Init,
+    Forward,
+    Back,
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Visualises the inner reduction `reduce <op> over <expr>` below the grid, as a static left-fold for the selected row.
+///
+/// Layout (all aligned to the grid's columns):
+///   * a **working row** — a live copy of the selected row's values, labelled with the `over` expression (e.g. `a[x]`)
+///     with the index variable substituted for the current row;
+///   * an **operation row** — `op` boxes in columns `1..cols`, forming a left-fold (each box folds the running result
+///     with the next working element); and
+///   * an **output-state row** — `c[x]` for each outer row. Stepping forward computes and fills `c[x]`; stepping back
+///     blanks the cell just left, so the output reflects only the rows reached so far.
+///
+/// The Step buttons live in the fixed transport bar (`transport`) when one is present, otherwise below the diagram.
+/// They drive a single shared closure that re-points the working values/label, the output value, and the highlights.
+/// Returns the buttons (which own that closure) and the drawn area's bottom-right corner for viewport fitting.
+#[allow(clippy::too_many_arguments)]
+fn render_reduction(
+    svg: &SvgRoot,
+    transport: Option<&SvgRoot>,
+    spec: &GridSpec,
+    matrix: &[Vec<u64>],
+    op: &BinOp,
+    label_source: Option<(String, Expr)>,
+    grid_origin: Point,
+    grid_bottom: f64,
+    state_cells: Vec<Vec<SvgNode>>,
+) -> Result<(Vec<SvgNode>, Point), Error> {
+    let (cell_w, cell_h, gap) = (spec.cell_w, spec.cell_h, spec.cell_gap);
+    let (cols, rows, digits) = (spec.cols, spec.rows, spec.digits);
+    let range = spec.step_range;
+    let start = range.0;
+
+    let col_x = |c: usize| grid_origin.x + c as f64 * (cell_w + gap);
+
+    // The fold is drawn below the grid; the buttons are no longer interleaved here (they live in the transport bar).
+    let content_top = grid_bottom + cell_h;
+    let label_baseline = content_top + cell_h * 0.7;
+    let working_y = content_top + cell_h;
+    let op_y = working_y + 2.0 * cell_h; // a `cell_h` band is left clear between rows for the connector wires
+    let output_y = op_y + 2.0 * cell_h;
+
+    // --- working-row label: the `over` expression with the index variable bound to the current row ---
+    fn label_text(source: &Option<(String, Expr)>, x: usize) -> String {
+        source
+            .as_ref()
+            .map(|(var, expr)| expr_label(expr, var, x))
+            .unwrap_or_default()
+    }
+    let working_label =
+        svg.text(Point::new(grid_origin.x, label_baseline), &label_text(&label_source, start))?;
+    working_label.set_fill(PALE_BLUE_GREY)?;
+    working_label.set_attr("font-family", CELL_FONT_FAMILY)?;
+    working_label.set_attr("font-size", "13")?;
+
+    // --- working row: a live copy of the selected row ---
+    let start_vals = matrix.get(start).cloned().unwrap_or_default();
+    let mut working_texts = Vec::with_capacity(cols);
+    for c in 0..cols {
+        let content = format_value(start_vals.get(c).copied().unwrap_or(0), digits);
+        let (_, text) =
+            draw_value_cell(svg, Point::new(col_x(c), working_y), Size::new(cell_w, cell_h), &content)?;
+        working_texts.push(text);
+    }
+
+    // --- operation row: `op` boxes in columns 1..cols (column 0 is just the first operand) ---
+    for c in 1..cols {
+        let box_ = svg.rect(Point::new(col_x(c), op_y), Size::new(cell_w, cell_h))?;
+        box_.set_fill(DEEP_SLATE_BLUE)?;
+        box_.set_stroke(SKY_BLUE)?;
+        box_.set_stroke_width(1.0)?;
+        box_.set_attr("rx", "4")?;
+
+        let label = svg.text(Point::new(col_x(c) + cell_w / 2.0, op_y + cell_h / 2.0), op_symbol(op))?;
+        label.set_fill(PALE_BLUE_GREY)?;
+        label.set_attr("text-anchor", "middle")?;
+        label.set_attr("dominant-baseline", "central")?;
+        label.set_attr("font-family", "sans-serif")?;
+        label.set_attr("font-size", "12")?;
+    }
+
+    // --- fold connector wires (static) ---
+    let working_bottom = working_y + cell_h;
+    let op_mid = op_y + cell_h / 2.0;
+    let op_top = |c: usize| Point::new(col_x(c) + cell_w / 2.0, op_y); // "next element" input
+    let op_left = |c: usize| Point::new(col_x(c), op_mid); // "running result" input
+    let op_right = |c: usize| Point::new(col_x(c) + cell_w, op_mid);
+
+    for c in 1..cols {
+        // The next working element drops straight down into the box's top.
+        let from = Point::new(col_x(c) + cell_w / 2.0, working_bottom);
+        wire(svg, &format!("M {} {} L {} {}", from.x, from.y, op_top(c).x, op_top(c).y))?;
+
+        if c == 1 {
+            // The first operand (working[0]) elbows into the left of the first box.
+            let w0 = Point::new(col_x(0) + cell_w / 2.0, working_bottom);
+            wire(svg, &format!("M {} {} L {} {} L {} {}", w0.x, w0.y, w0.x, op_mid, op_left(1).x, op_mid))?;
+        } else {
+            // The running result flows horizontally from the previous box into this one's left.
+            wire(svg, &format!("M {} {} L {} {}", op_right(c - 1).x, op_mid, op_left(c).x, op_mid))?;
+        }
+    }
+
+    // --- output-state row: c[x] for each outer row, all initially blank ---
+    let mut output_rects = Vec::with_capacity(rows);
+    let mut output_texts = Vec::with_capacity(rows);
+    for r in 0..rows {
+        let (rect, text) =
+            draw_value_cell(svg, Point::new(col_x(r), output_y), Size::new(cell_w, cell_h), "")?;
+        output_rects.push(rect);
+        output_texts.push(text);
+    }
+
+    // --- shared navigation: forward computes c[x]; back blanks the cell left behind ---
+    let matrix = matrix.to_vec(); // own the data so the closure can be 'static
+    let op = op.clone();
+    let current = Cell::new(start);
+
+    let go: Rc<dyn Fn(StepAction)> = Rc::new(move |action: StepAction| {
+        let old = current.get();
+        let x = match action {
+            StepAction::Init => old,
+            StepAction::Forward => step_forward(old, range),
+            StepAction::Back => step_back(old, range),
+        };
+        current.set(x);
+
+        highlight_row(&state_cells[..], x);
+
+        if let Some(vals) = matrix.get(x) {
+            for (c, t) in working_texts.iter().enumerate() {
+                t.set_text(&format_value(vals.get(c).copied().unwrap_or(0), digits));
+            }
+        }
+        working_label.set_text(&label_text(&label_source, x));
+
+        match action {
+            // Arriving at a row (forward, or the initial display) computes and writes its reduction.
+            StepAction::Init | StepAction::Forward => {
+                if let (Some(vals), Some(t)) = (matrix.get(x), output_texts.get(x))
+                    && let Some(result) = apply_reduce(&op, vals)
+                {
+                    t.set_text(&format_value(result, digits));
+                }
+            }
+            // Stepping back un-computes: blank the cell we just left.
+            StepAction::Back => {
+                if x < old
+                    && let Some(t) = output_texts.get(old)
+                {
+                    t.set_text("");
+                }
+            }
+        }
+
+        for (r, rect) in output_rects.iter().enumerate() {
+            let _ = rect.set_fill(if r == x { HILITE_FILL } else { CELL_FILL });
+        }
+    });
+    go(StepAction::Init);
+
+    // --- step buttons: in the transport bar if available, otherwise below the diagram ---
+    let (button_root, back_pt) = match transport {
+        Some(t) => (t, Point::new(TRANSPORT_PAD, (TRANSPORT_H - BTN_H) / 2.0)),
+        None => (svg, Point::new(grid_origin.x, output_y + 2.0 * cell_h)),
+    };
+    let fwd_pt = Point::new(back_pt.x + BTN_W + BTN_GAP, back_pt.y);
+
+    let back = make_button(button_root, back_pt, "\u{2190} Step back")?;
+    {
+        let go = Rc::clone(&go);
+        back.on_click(move |_| go(StepAction::Back))?;
+    }
+    let fwd = make_button(button_root, fwd_pt, "Step forward \u{2192}")?;
+    {
+        let go = Rc::clone(&go);
+        fwd.on_click(move |_| go(StepAction::Forward))?;
+    }
+
+    // Viewport extent of what we drew on the main SVG (buttons in the transport bar don't count).
+    let content_right = col_x(cols.max(rows).saturating_sub(1)) + cell_w;
+    let (right, bottom) = match transport {
+        Some(_) => (content_right, output_y + cell_h),
+        None => (content_right.max(fwd_pt.x + BTN_W), fwd_pt.y + BTN_H),
+    };
+    Ok((vec![back, fwd], Point::new(right, bottom)))
+}
+
+/// Draws a connector wire from an SVG path-data string (no fill, grey stroke).
+fn wire(svg: &SvgRoot, d: &str) -> Result<(), Error> {
+    let path = svg.path(d)?;
+    path.set_fill("none")?;
+    path.set_stroke(MEDIUM_GREY)?;
+    path.set_stroke_width(1.5)?;
+    Ok(())
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
