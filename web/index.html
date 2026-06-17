@@ -33,15 +33,47 @@
     <script type="module">
         import init, { run } from './pkg/hash_visualiser.js';
 
-        try {
-            await init();
-            run('app');
-        } catch (err) {
-            const banner = document.getElementById('error-banner');
-            banner.style.display = 'block';
-            banner.textContent = `Error: ${err}`;
-            console.error(err);
+        // The .hv source is fetched at runtime and polled for changes, so editing the file re-renders the diagram
+        // live — no wasm rebuild or server restart needed.
+        const HV_URL = '/hv/sha3.hv';
+        const POLL_MS = 1000;
+
+        const app = document.getElementById('app');
+        const transport = document.getElementById('transport');
+        const banner = document.getElementById('error-banner');
+
+        let lastSource = null;
+
+        function render(source) {
+            // Clear the previous render before drawing afresh (run() appends new <svg> elements).
+            app.innerHTML = '';
+            transport.innerHTML = '';
+            try {
+                run('app', source);
+                banner.style.display = 'none';
+                banner.textContent = '';
+            } catch (err) {
+                banner.style.display = 'block';
+                banner.textContent = `Error: ${err}`;
+                console.error(err);
+            }
         }
+
+        async function poll() {
+            let source;
+            try {
+                source = await fetch(HV_URL, { cache: 'no-store' }).then(r => r.text());
+            } catch (e) {
+                return; // transient fetch failure — try again next tick
+            }
+            if (source === lastSource) return; // unchanged since last render
+            lastSource = source;
+            render(source);
+        }
+
+        await init();
+        await poll();                  // initial render
+        setInterval(poll, POLL_MS);    // live reload on file change
     </script>
 </body>
 
