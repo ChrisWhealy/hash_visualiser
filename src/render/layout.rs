@@ -17,34 +17,65 @@ pub const NODE_GAP: f64 = 40.0;
 /// Padding between the diagram and the edge of the viewport.
 pub const MARGIN: f64 = 40.0;
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Assigns a [`Rect`] to every node in the graph from its topological layers and flow direction.
-///
-/// Each layer occupies one position along the *main* axis (the flow direction); nodes within a layer are spread along
-/// the *cross* axis.  `RightToLeft` and `BottomToTop` simply reverse the main-axis ordering of the layers.
+/// Uniform-box layout — every node is `NODE_W`×`NODE_H`. Used for sizing estimates ([`super::diagram_size`]) and as
+/// the default when actual node sizes are not yet known.
 pub fn layout(graph: &ValidatedGraph) -> HashMap<String, Rect> {
+    let sizes: HashMap<String, Size> = graph
+        .nodes
+        .keys()
+        .map(|n| (n.clone(), Size::new(NODE_W, NODE_H)))
+        .collect();
+
+    layout_sized(graph, &sizes)
+}
+
+/// Assigns a [`Rect`] to every node from its topological layers and flow direction, honouring each node's actual size.
+///
+/// Each topological layer occupies one slot along the *main* axis (the flow direction); nodes within a layer are
+/// stacked along the *cross* axis.  Layers advance along the main axis by the largest node in each preceding layer, so
+/// an oversized node (e.g. an array grid) pushes downstream layers clear of it rather than overlapping them.
+/// `RightToLeft` / `BottomToTop` reverse which screen slot each topological layer takes.  Nodes absent from `sizes`
+/// fall back to `NODE_W`×`NODE_H`.
+pub fn layout_sized(graph: &ValidatedGraph, sizes: &HashMap<String, Size>) -> HashMap<String, Rect> {
+    let horizontal = matches!(
+        graph.flow,
+        FlowDirection::LeftToRight | FlowDirection::RightToLeft
+    );
+    let n = graph.layers.len();
+
+    // Screen order of the topological layers: reversed for RtL / BtT.
+    let screen_order: Vec<usize> = match graph.flow {
+        FlowDirection::LeftToRight | FlowDirection::TopToBottom => (0..n).collect(),
+        FlowDirection::RightToLeft | FlowDirection::BottomToTop => (0..n).rev().collect(),
+    };
+
+    let size_of = |name: &str| sizes.get(name).copied().unwrap_or(Size::new(NODE_W, NODE_H));
+    let main_of = |s: Size| if horizontal { s.width } else { s.height };
+    let cross_of = |s: Size| if horizontal { s.height } else { s.width };
+
     let mut out = HashMap::with_capacity(graph.nodes.len());
-    let n_layers = graph.layers.len();
+    let mut main_off = MARGIN;
 
-    for (li, layer) in graph.layers.iter().enumerate() {
-        let main_idx = match graph.flow {
-            FlowDirection::RightToLeft | FlowDirection::BottomToTop => n_layers - 1 - li,
-            FlowDirection::LeftToRight | FlowDirection::TopToBottom => li,
-        };
+    for &topo_i in &screen_order {
+        let layer = &graph.layers[topo_i];
+        let layer_main = layer
+            .iter()
+            .map(|name| main_of(size_of(name)))
+            .fold(0.0_f64, f64::max);
 
-        for (pi, name) in layer.iter().enumerate() {
-            let p = match graph.flow {
-                FlowDirection::LeftToRight | FlowDirection::RightToLeft => Point::new(
-                    MARGIN + main_idx as f64 * (NODE_W + LAYER_GAP),
-                    MARGIN + pi as f64 * (NODE_H + NODE_GAP),
-                ),
-                FlowDirection::TopToBottom | FlowDirection::BottomToTop => Point::new(
-                    MARGIN + pi as f64 * (NODE_W + NODE_GAP),
-                    MARGIN + main_idx as f64 * (NODE_H + LAYER_GAP),
-                ),
+        let mut cross_off = MARGIN;
+        for name in layer {
+            let sz = size_of(name);
+            let p = if horizontal {
+                Point::new(main_off, cross_off)
+            } else {
+                Point::new(cross_off, main_off)
             };
-
-            out.insert(name.clone(), Rect::new(p, Size::new(NODE_W, NODE_H)));
+            out.insert(name.clone(), Rect::new(p, sz));
+            cross_off += cross_of(sz) + NODE_GAP;
         }
+
+        main_off += layer_main + LAYER_GAP;
     }
 
     out
