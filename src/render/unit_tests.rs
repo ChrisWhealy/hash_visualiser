@@ -439,3 +439,24 @@ fn should_label_working_row_with_substituted_index() -> Result<(), String> {
     eq(expr_label(&expr, &var, 0), "a[0]")?;
     eq(expr_label(&expr, &var, 3), "a[3]")
 }
+
+#[test]
+fn should_find_reduction_via_compute_without_a_wire() -> Result<(), String> {
+    // No `wire state -> c`: the `compute: ThetaC(state)` link alone drives the reduction visualisation, so commenting
+    // out the wire must not make the working/operation/result rows disappear.
+    let g = parse_and_build(
+        "
+        hash SHA3 {
+            fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+            data A = [[0x1, 0x2, 0x3, 0x4, 0x5], [0x1, 0x2, 0x3, 0x4, 0x5], [0x1, 0x2, 0x3, 0x4, 0x5], [0x1, 0x2, 0x3, 0x4, 0x5], [0x1, 0x2, 0x3, 0x4, 0x5]]
+            node state : register  { format: hex64, source: A }
+            node c     : operation { symbol: \"ThetaC\", compute: ThetaC(state) }
+        }
+    ",
+    );
+
+    eq(reduction_op("state", &g), Some(BinOp::Xor))?;
+    eq(inferred_grid_shape("state", &g), Some((5, 5)))?;
+    let (var, _) = reduction_label_source("state", &g).ok_or("expected reduction found via compute")?;
+    eq(var.as_str(), "x")
+}

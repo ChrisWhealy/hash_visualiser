@@ -299,8 +299,25 @@ fn node_label(decl: &NodeDecl) -> String {
 // Array-grid visualisation
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-/// The function `name` feeds: the `symbol` function of the `operation` node at the far end of a wire out of `name`.
-fn wired_function<'a>(name: &str, graph: &'a ValidatedGraph) -> Option<&'a FnDef> {
+/// The function that `name` is an input to.
+///
+/// Found from the data flow itself, independent of any wire: a node whose `compute` expression applies a function to
+/// `name` (e.g. `compute: ThetaC(state)`). Falls back to a wire `name -> op` whose `op` carries a `symbol` naming the
+/// function. Because the `compute` link is checked first, the visualisation does not depend on the wire being present.
+fn fed_function<'a>(name: &str, graph: &'a ValidatedGraph) -> Option<&'a FnDef> {
+    // (a) A node computes a function applied to `name`.
+    let via_compute = graph.nodes.values().find_map(|decl| {
+        let value = decl.properties.iter().find(|p| p.name == "compute")?;
+        match &value.value {
+            PropValue::Expr(e) => compute_function(e, name, graph),
+            _ => None,
+        }
+    });
+    if via_compute.is_some() {
+        return via_compute;
+    }
+
+    // (b) A wire carries `name` into an `operation` node whose `symbol` names the function.
     graph.wires.iter().find_map(|wire| {
         let (WireEndpoint::Node(src), WireEndpoint::Node(dst)) = (&wire.source, &wire.target) else {
             return None;
@@ -314,6 +331,30 @@ fn wired_function<'a>(name: &str, graph: &'a ValidatedGraph) -> Option<&'a FnDef
     })
 }
 
+/// If `expr` applies a function to `name` (as a direct argument), returns that function; recurses into sub-expressions.
+fn compute_function<'a>(expr: &Expr, name: &str, graph: &'a ValidatedGraph) -> Option<&'a FnDef> {
+    match expr {
+        Expr::Call { name: callee, args } => {
+            if args.iter().any(|a| matches!(a, Expr::Ident(s) if s == name)) {
+                graph.fn_defs.get(callee)
+            } else {
+                args.iter().find_map(|a| compute_function(a, name, graph))
+            }
+        }
+        Expr::BinOp { lhs, rhs, .. } => {
+            compute_function(lhs, name, graph).or_else(|| compute_function(rhs, name, graph))
+        }
+        Expr::Not(inner) => compute_function(inner, name, graph),
+        Expr::Index { base, index } => {
+            compute_function(base, name, graph).or_else(|| compute_function(index, name, graph))
+        }
+        Expr::Reduce { array, .. } => compute_function(array, name, graph),
+        Expr::Comprehension { body, .. } => compute_function(body, name, graph),
+        Expr::Array(elems) => elems.iter().find_map(|e| compute_function(e, name, graph)),
+        Expr::Integer(_) | Expr::HexLit(_) | Expr::Ident(_) => None,
+    }
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Infers a 2D `(rows, cols)` shape for `name` from the function it feeds.
 ///
@@ -323,7 +364,7 @@ fn wired_function<'a>(name: &str, graph: &'a ValidatedGraph) -> Option<&'a FnDef
 /// This is the fallback shape source: when a node declares its own `data` (via a `source` property), `grid_spec` takes
 /// the shape directly from that literal instead. Returns `None` for ordinary scalar nodes.
 fn inferred_grid_shape(name: &str, graph: &ValidatedGraph) -> Option<(usize, usize)> {
-    match &wired_function(name, graph)?.params.first()?.ty {
+    match &fed_function(name, graph)?.params.first()?.ty {
         Type::Array { element, len: rows } => match element.as_ref() {
             Type::Array { len: cols, .. } => Some((*rows, *cols)),
             _ => None,
@@ -336,7 +377,7 @@ fn inferred_grid_shape(name: &str, graph: &ValidatedGraph) -> Option<(usize, usi
 /// The half-open iteration range `[start, end)` the step buttons walk: the range of the (first) comprehension in the
 /// fed function's body, e.g. `for x in 0..5`. Falls back to the full row span when the body has no comprehension.
 fn step_range(name: &str, graph: &ValidatedGraph, rows: usize) -> (usize, usize) {
-    wired_function(name, graph)
+    fed_function(name, graph)
         .and_then(|f| find_comprehension_range(&f.body))
         .unwrap_or((0, rows))
 }
@@ -461,7 +502,7 @@ fn effective_matrix(spec: &GridSpec) -> Vec<Vec<u64>> {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// The reduction operator of the (first) `reduce` in the function `name` feeds, if any — e.g. `Xor` for `reduce xor`.
 fn reduction_op(name: &str, graph: &ValidatedGraph) -> Option<BinOp> {
-    find_reduction_op(&wired_function(name, graph)?.body)
+    find_reduction_op(&fed_function(name, graph)?.body)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -512,7 +553,7 @@ fn op_symbol(op: &BinOp) -> &'static str {
 /// Source for the working-row label: the index variable of the (first) comprehension and the expression that its
 /// reduction folds over (the operand after `over`), e.g. `("x", a[x])` for `[ for x in 0..5 => reduce xor over a[x] ]`.
 fn reduction_label_source(name: &str, graph: &ValidatedGraph) -> Option<(String, Expr)> {
-    find_comprehension_detail(&wired_function(name, graph)?.body)
+    find_comprehension_detail(&fed_function(name, graph)?.body)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -19,7 +19,7 @@ hash SHA3 {
 
     fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
 
-    data A = [
+    data InputData = [
         [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
         [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
         [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
@@ -27,7 +27,7 @@ hash SHA3 {
         [ 0xe8c0284800b19533, 0xf3c1294f291c1bc8, 0xadea5a3b0abf3906, 0xa94ebb2f1bd3f309, 0xbb114511e928a5df ]
     ]
 
-    node state : register  { label: "State", format: hex64, source: A }
+    node state : register  { label: "State", format: hex64, source: InputData }
     node c     : operation { symbol: "ThetaC", compute: ThetaC(state) }
 
     layout: left_to_right
