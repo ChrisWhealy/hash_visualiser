@@ -867,10 +867,12 @@ enum StepAction {
 /// Visualises the inner reduction `reduce <op> over <expr>` below the grid, as a static left-fold for the selected row.
 ///
 /// Layout (all aligned to the grid's columns):
-///   * a **working row** — a live copy of the selected row's values, labelled with the `over` expression (e.g. `a[x]`)
-///     with the index variable substituted for the current row;
+///   * a **working row** — a live copy of the selected row's values (the inputs to this iteration), labelled with the
+///     `over` expression (e.g. `a[x]`) with the index variable substituted for the current row;
 ///   * an **operation row** — `op` boxes in columns `1..cols`, forming a left-fold (each box folds the running result
-///     with the next working element); and
+///     with the next working element);
+///   * a **result row** — a single cell in the rightmost column, directly below the final fold box, showing this
+///     iteration's output (the reduction of the working row); and
 ///   * an **output-state row** — `c[x]` for each outer row. Stepping forward computes and fills `c[x]`; stepping back
 ///     blanks the cell just left, so the output reflects only the rows reached so far.
 ///
@@ -901,7 +903,8 @@ fn render_reduction(
     let label_baseline = content_top + cell_h * 0.7;
     let working_y = content_top + cell_h;
     let op_y = working_y + 2.0 * cell_h; // a `cell_h` band is left clear between rows for the connector wires
-    let output_y = op_y + 2.0 * cell_h;
+    let result_y = op_y + 2.0 * cell_h; // this iteration's output, directly below the final fold box
+    let output_y = result_y + 2.0 * cell_h;
 
     // --- working-row label: the `over` expression with the index variable bound to the current row ---
     fn label_text(source: &Option<(String, Expr)>, x: usize) -> String {
@@ -964,6 +967,16 @@ fn render_reduction(
         }
     }
 
+    // --- result row: this iteration's output value, a single cell in the rightmost column ---
+    let last_col = cols.saturating_sub(1);
+    let (_, result_text) =
+        draw_value_cell(svg, Point::new(col_x(last_col), result_y), Size::new(cell_w, cell_h), "")?;
+    if cols >= 2 {
+        // The final fold box's output drops straight down into the result cell.
+        let x_mid = col_x(last_col) + cell_w / 2.0;
+        wire(svg, &format!("M {} {} L {} {}", x_mid, op_y + cell_h, x_mid, result_y))?;
+    }
+
     // --- output-state row: c[x] for each outer row, all initially blank ---
     let mut output_rects = Vec::with_capacity(rows);
     let mut output_texts = Vec::with_capacity(rows);
@@ -994,6 +1007,8 @@ fn render_reduction(
             for (c, t) in working_texts.iter().enumerate() {
                 t.set_text(&format_value(vals.get(c).copied().unwrap_or(0), digits));
             }
+            // The result row always shows the current iteration's output (recomputed each step).
+            result_text.set_text(&apply_reduce(&op, vals).map(|r| format_value(r, digits)).unwrap_or_default());
         }
         working_label.set_text(&label_text(&label_source, x));
 
