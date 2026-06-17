@@ -1,36 +1,36 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // SHA3 (Keccak) theta_c step — column-parity helper.
 //
-// The Keccak state is a 5x5 matrix of u8 lanes.
-// 
-// In this proof-of-concept, the lanes are visualised as hex bytes, so the state has the type [[u8; 5]; 5] and is
-// rendered with the hex8 formatter.
+// The Keccak state is a 5x5 matrix of u64 lanes, visualised as hex with the hex64 formatter.
 //
-// ThetaC computes, for each column, the XOR parity of its five lanes. It takes the 5x5 state [[u8; 5]; 5] and returns
-// the 5-element column-parity vector [u8; 5]:
+// ThetaC computes, for each column, the XOR parity of its five lanes. It takes the 5x5 state [[u64; 5]; 5] and returns
+// the 5-element column-parity vector [u64; 5]:
 //
 //     C[x] = A[x,0] ^ A[x,1] ^ A[x,2] ^ A[x,3] ^ A[x,4]   for x in 0..5
 //
 // Expressed declaratively as an array comprehension over the columns, whose body XOR-reduces each column (row) — no
 // loop, no mutable accumulator, no first-class functions.
 //
-// A function that is missing the `-> type` declaration returns UNIT.
+// The state's actual values are declared as a `data` binding (`A`); the `state` node references it via `source: A`,
+// and the `c` operation node applies the function to it via `compute: ThetaC(state)`.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 hash SHA3 {
     context { word_size: 64 }
 
     fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
 
-    node state : register  { label: "State", format: hex64 }
-    node c     : operation { symbol: "ThetaC" }
+    data A = [
+        [ 0x0000000000000001, 0x8000000080008008, 0x800000000000808a, 0x8000000080008000, 0x000000000000808b ],
+        [ 0x0000000080000001, 0x8000000080008081, 0x8000000000008009, 0x000000000000008a, 0x0000000000000088 ],
+        [ 0x0000000080008009, 0x000000008000000a, 0x000000008000808b, 0x800000000000008b, 0x8000000000008089 ],
+        [ 0x8000000000008003, 0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a ],
+        [ 0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008, 0x0000000000000001 ]
+    ]
+
+    node state : register  { label: "State", format: hex64, source: A }
+    node c     : operation { symbol: "ThetaC", compute: ThetaC(state) }
 
     layout: left_to_right
 
     wire state -> c
-
-    c on receive(col) {
-        let parity = ThetaC(col)
-        animate fill: pulse "steelblue" for 200ms
-        emit forward(parity)
-    }
 }

@@ -52,11 +52,57 @@ LINE_COMMENT ::= "//" { char_except_newline } newline ;
    The following identifiers are reserved and may not be used as user-defined names for nodes, wires, functions, or
    kinds.
 
-   all      and     animate   arrange        auto      bottom_to_top  button         compute   constant  contains
-   context  emit    fn        for            format    from           grid           group     hash      horizontal
-   in       label   layout    left_to_right  let       node           not            on        operation or
-   over     pinned  reduce    register       reroute   right_to_left  rotl_s         rotl_u    rotr_s    rotr_u
-   set      shl     shr_s     shr_u          symbol    to             top_to_bottom  vertical  via       wire
+   all
+   and
+   animate
+   arrange
+   auto
+   bottom_to_top
+   button
+   compute
+   constant
+   contains
+   context
+   data
+   emit
+   fn
+   for
+   format
+   from
+   grid
+   group
+   hash
+   horizontal
+   in
+   label
+   layout
+   left_to_right
+   let
+   node
+   not
+   on
+   operation
+   or
+   over
+   pinned
+   reduce
+   register
+   reroute
+   right_to_left
+   rotl_s
+   rotl_u
+   rotr_s
+   rotr_u
+   set
+   shl
+   shr_s
+   shr_u
+   symbol
+   to
+   top_to_bottom
+   vertical
+   via
+   wire
    xor
 *)
 
@@ -76,7 +122,8 @@ top_item ::= context_block
           |  wire_decl
           |  group_decl
           |  layout_decl
-          |  event_handler ;
+          |  event_handler
+          |  data_decl ;
 
 
 (* =====================================================================================================================
@@ -158,7 +205,8 @@ hash_item  ::= context_block
             |  wire_decl
             |  group_decl
             |  layout_decl
-            |  event_handler ;
+            |  event_handler
+            |  data_decl ;
 
 
 (* =====================================================================================================================
@@ -189,7 +237,9 @@ builtin_kind ::= "register"
    format     : format_spec  (identifier — see §6.1)
    word_size  : INTEGER      (per-node override of context value)
    layout     : layout_mode  (see §6.2)
-   compute    : expr         (operation node shorthand — see §9)
+   compute    : expr         (operation node shorthand — see §9; a function application such as ThetaC(state),
+                              where an IDENT argument naming a node resolves to that node's data — see §6.3)
+   source     : IDENT        (names the data binding (§6.3) that supplies this node's value)
    arrange    : arrange_mode (see §8)
 *)
 prop_value ::= STRING | expr ;
@@ -219,6 +269,22 @@ format_spec ::= "hex8"  | "hex16"  | "hex32"  | "hex64"
 
 layout_mode ::= "auto"
              |  "pinned" "(" INTEGER "," INTEGER ")" ;
+
+
+(* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   §6.3  Data bindings
+
+   A data binding names a literal value (typically a nested array literal — see §11.1) at the top level or inside a
+   hash block.  A node references a binding through its "source" property, and the bound value can be passed to a
+   function via an operation node's "compute" expression, e.g.
+
+       data A = [ [0x...], ... ]
+       node state : register  { format: hex64, source: A }
+       node c     : operation { symbol: "ThetaC", compute: ThetaC(state) }
+
+   Validation: a "source" must name a declared binding; functions called in "compute" must exist with matching arity.
+*)
+data_decl ::= "data" IDENT "=" expr ;
 
 
 (* =====================================================================================================================
@@ -408,22 +474,23 @@ postfix_expr ::= primary_expr { "[" expr "]" } ;
    fn_call is tried before IDENT: both begin with IDENT, but fn_call additionally requires a following "(".
    A bare IDENT with no "(" is therefore always an identifier reference, never an argumentless call.
 
-   A leading "[" begins a comprehension (an array literal in expression position); a trailing "[" after an atom is
-   the index operator above.
+   A leading "[" begins a comprehension when the next token is "for", otherwise an array literal; a trailing "[" after
+   an atom is the index operator above.
 *)
-primary_expr ::= INTEGER
-              |  HEX_LIT
-              |  fn_call
-              |  IDENT
-              |  comprehension
-              |  reduction
-              |  "(" expr ")" ;
-
-fn_call     ::= IDENT "(" [ arg_list ] ")" ;
-
 (* See §11.1 *)
+array_literal ::= "[" [ expr { "," expr } [","] ] "]" ;
 comprehension ::= "[" "for" IDENT "in" INTEGER ".." INTEGER "=>" expr "]" ;
 reduction     ::= "reduce" reduce_op "over" unary_expr ;
+fn_call       ::= IDENT "(" [ arg_list ] ")" ;
+
+primary_expr  ::= INTEGER
+               |  HEX_LIT
+               |  fn_call
+               |  IDENT
+               |  comprehension
+               |  array_literal
+               |  reduction
+               |  "(" expr ")" ;
 
 
 (* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

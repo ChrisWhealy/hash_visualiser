@@ -2,7 +2,7 @@ use crate::ast::{
     ebnf_03::ContextBlock,
     ebnf_04::FnDef,
     ebnf_05::HashBlock,
-    ebnf_06::NodeDecl,
+    ebnf_06::{DataDecl, NodeDecl},
     ebnf_07::WireDecl,
     ebnf_08::{FlowDirection, GroupDecl},
     ebnf_09::EventHandler,
@@ -26,4 +26,5 @@ pub enum TopItem {
     Group(GroupDecl),
     Layout(FlowDirection),
     EventHandler(EventHandler),
+    Data(DataDecl),
 }

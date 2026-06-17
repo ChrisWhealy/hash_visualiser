@@ -411,3 +411,54 @@ fn should_error_on_comprehension_missing_range() -> Result<(), String> {
 fn should_error_on_unclosed_index() -> Result<(), String> {
     msg_contains(&expect_parse_err("fn f() = a[0")?, "`]`")
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// §11.1  Array literals
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_parse_array_literal() -> Result<(), String> {
+    match expr_of("fn f() = [1, 2, 3]")? {
+        Expr::Array(elems) => eq(elems.len(), 3),
+        other => Err(format!("expected Array, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_parse_empty_array_literal() -> Result<(), String> {
+    match expr_of("fn f() = []")? {
+        Expr::Array(elems) => eq(elems.len(), 0),
+        other => Err(format!("expected empty Array, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_parse_nested_array_literal() -> Result<(), String> {
+    // [[1, 2], [3, 4]] -> Array of 2 inner arrays of 2
+    match expr_of("fn f() = [[1, 2], [3, 4]]")? {
+        Expr::Array(rows) => {
+            eq(rows.len(), 2)?;
+            match &rows[0] {
+                Expr::Array(c) => eq(c.len(), 2),
+                other => Err(format!("expected inner Array, got {other:?}")),
+            }
+        }
+        other => Err(format!("expected Array, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_allow_trailing_comma_in_array_literal() -> Result<(), String> {
+    match expr_of("fn f() = [0x1, 0x2,]")? {
+        Expr::Array(elems) => eq(elems.len(), 2),
+        other => Err(format!("expected Array, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_still_parse_comprehension_after_bracket_disambiguation() -> Result<(), String> {
+    // A leading "[" followed by "for" is a comprehension, not an array literal.
+    match expr_of("fn f() = [ for x in 0..3 => x ]")? {
+        Expr::Comprehension { .. } => Ok(()),
+        other => Err(format!("expected Comprehension, got {other:?}")),
+    }
+}

@@ -148,3 +148,24 @@ fn should_error_on_node_missing_body_brace() -> Result<(), String> {
         .unwrap_err();
     msg_contains(&err.message, "`{`")
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Data declarations
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_parse_data_decl_with_array_literal() -> Result<(), String> {
+    let d = make_parser("data A = [[0x1, 0x2], [0x3, 0x4]]")?
+        .parse_data_decl()
+        .map_err(|e| e.to_string())?;
+    eq(d.name.as_str(), "A")?;
+    match d.value {
+        Expr::Array(rows) => eq(rows.len(), 2),
+        other => Err(format!("expected Array value, got {other:?}")),
+    }
+}
+
+#[test]
+fn should_error_on_data_decl_missing_equals() -> Result<(), String> {
+    let err = make_parser("data A [1, 2]")?.parse_data_decl().unwrap_err();
+    msg_contains(&err.message, "`=`")
+}

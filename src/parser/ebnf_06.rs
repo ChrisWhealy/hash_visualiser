@@ -1,6 +1,6 @@
 use super::Parser;
 use crate::{
-    ast::ebnf_06::{NodeDecl, NodeKind, PropValue, Property},
+    ast::ebnf_06::{DataDecl, NodeDecl, NodeKind, PropValue, Property},
     ast::ebnf_11::Expr,
     error::parse_error::ParseError,
     lexer::token::Token,
@@ -10,6 +10,16 @@ use crate::{
 // EBNF §6 Node declarations
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 impl Parser {
+    // data_decl ::= "data" IDENT "=" expr ;  (value is a literal, typically a nested array literal)
+    pub fn parse_data_decl(&mut self) -> Result<DataDecl, ParseError> {
+        self.expect(&Token::Data, "`data`")?;
+        let name = self.expect_ident()?;
+        self.expect(&Token::Equals, "`=`")?;
+        let value = self.parse_expr()?;
+
+        Ok(DataDecl { name, value })
+    }
+
     pub fn parse_node_decl(&mut self) -> Result<NodeDecl, ParseError> {
         self.expect(&Token::Node, "`node`")?;
         let name = self.expect_ident()?;

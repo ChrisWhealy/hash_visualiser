@@ -28,6 +28,7 @@ impl Parser {
             Some(Token::Wire) => Ok(TopItem::Wire(self.parse_wire_decl()?)),
             Some(Token::Group) => Ok(TopItem::Group(self.parse_group_decl()?)),
             Some(Token::Layout) => Ok(TopItem::Layout(self.parse_layout_decl()?)),
+            Some(Token::Data) => Ok(TopItem::Data(self.parse_data_decl()?)),
             Some(Token::Ident(_)) => Ok(TopItem::EventHandler(self.parse_event_handler()?)),
             Some(t) => Err(self.err(format!("unexpected token `{t}` found at top level"))),
             None => Err(self.err("unexpected end of input")),

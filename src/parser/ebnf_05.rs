@@ -31,6 +31,7 @@ impl Parser {
             Some(Token::Wire) => Ok(HashItem::Wire(self.parse_wire_decl()?)),
             Some(Token::Group) => Ok(HashItem::Group(self.parse_group_decl()?)),
             Some(Token::Layout) => Ok(HashItem::Layout(self.parse_layout_decl()?)),
+            Some(Token::Data) => Ok(HashItem::Data(self.parse_data_decl()?)),
             Some(Token::Ident(_)) => Ok(HashItem::EventHandler(self.parse_event_handler()?)),
             Some(t) => Err(self.err(format!("unexpected token `{t}` found in hash block"))),
             None => Err(self.err("hash block has not been terminated")),

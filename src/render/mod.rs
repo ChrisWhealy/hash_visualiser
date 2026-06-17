@@ -319,6 +319,7 @@ fn find_comprehension_range(expr: &Expr) -> Option<(usize, usize)> {
             find_comprehension_range(lhs).or_else(|| find_comprehension_range(rhs))
         }
         Expr::Call { args, .. } => args.iter().find_map(find_comprehension_range),
+        Expr::Array(elems) => elems.iter().find_map(find_comprehension_range),
         Expr::Integer(_) | Expr::HexLit(_) | Expr::Ident(_) => None,
     }
 }
@@ -345,6 +346,9 @@ struct GridSpec {
     digits: usize,
     /// Half-open `[start, end)` range the step buttons walk, from the fed function's comprehension.
     step_range: (usize, usize),
+    /// The node's declared data (`source: NAME`), if any. When present the grid shows these values; otherwise it
+    /// shows placeholders.
+    values: Option<Vec<Vec<u64>>>,
     /// All in user units, derived from the measured monospace advance `ch`.
     cell_w: f64,
     cell_h: f64,
@@ -355,8 +359,15 @@ struct GridSpec {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Resolves the grid spec for a node, or `None` if it is not an array node. `ch` is the measured monospace advance;
 /// every metric (cell width/height and inter-cell gap) is a multiple of it.
+///
+/// The shape comes from the node's declared data (`source: NAME`) when present, otherwise it is inferred from the type
+/// of the function the node feeds.
 fn grid_spec(name: &str, decl: &NodeDecl, graph: &ValidatedGraph, ch: f64) -> Option<GridSpec> {
-    let (rows, cols) = inferred_grid_shape(name, graph)?;
+    let values = node_data_matrix(decl, graph);
+    let (rows, cols) = match &values {
+        Some(rows) if !rows.is_empty() => (rows.len(), rows[0].len()),
+        _ => inferred_grid_shape(name, graph)?,
+    };
     let digits = format_digits(decl);
 
     Some(GridSpec {
@@ -364,11 +375,36 @@ fn grid_spec(name: &str, decl: &NodeDecl, graph: &ValidatedGraph, ch: f64) -> Op
         cols,
         digits,
         step_range: step_range(name, graph, rows),
+        values,
         cell_w: cell_width(digits, ch),
         cell_h: CELL_H_CH * ch,
         cell_gap: CELL_GAP_CH * ch,
         label_h: GRID_LABEL_H_CH * ch,
     })
+}
+
+/// Resolves a node's declared data to a 2D matrix of values: follows its `source: NAME` property to the data binding
+/// and interprets the bound array-of-arrays literal. `None` if the node has no `source` or the binding is not 2D.
+fn node_data_matrix(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<Vec<Vec<u64>>> {
+    let source = ident_prop(decl, "source")?;
+    let Expr::Array(rows) = graph.data.get(&source)? else {
+        return None;
+    };
+
+    rows.iter()
+        .map(|row| match row {
+            Expr::Array(cells) => cells.iter().map(literal_u64).collect::<Option<Vec<u64>>>(),
+            _ => None,
+        })
+        .collect::<Option<Vec<Vec<u64>>>>()
+}
+
+/// The numeric value of an integer or hex literal expression.
+fn literal_u64(expr: &Expr) -> Option<u64> {
+    match expr {
+        Expr::Integer(n) | Expr::HexLit(n) => Some(*n),
+        _ => None,
+    }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -437,24 +473,35 @@ fn format_digits(decl: &NodeDecl) -> usize {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Placeholder cell value: a deterministic spread so the full width is visibly used, masked to the format's bit width,
-/// and grouped into bytes (pairs of hex digits) separated by a small gap. A single-byte hex8 value has no gap.
-fn format_cell(index: usize, digits: usize) -> String {
-    let spread = (index as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+/// Formats a value for display: masked to the format's bit width and grouped into bytes (pairs of hex digits) separated
+/// by a small gap. A single-byte hex8 value has no gap.
+fn format_value(value: u64, digits: usize) -> String {
     let bits = digits * 4;
-    let value = if bits >= 64 {
-        spread
+    let masked = if bits >= 64 {
+        value
     } else {
-        spread & ((1u64 << bits) - 1)
+        value & ((1u64 << bits) - 1)
     };
 
-    let hex = format!("{value:0digits$x}");
+    let hex = format!("{masked:0digits$x}");
     hex.chars()
         .collect::<Vec<_>>()
         .chunks(2)
         .map(|byte| byte.iter().collect::<String>())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Placeholder cell value used when a node declares no data: a deterministic spread so the full cell width is visibly
+/// used.
+fn placeholder_value(index: usize) -> u64 {
+    (index as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
+
+/// Convenience wrapper kept for tests: the placeholder value for `index`, formatted for `digits`.
+#[cfg(test)]
+fn format_cell(index: usize, digits: usize) -> String {
+    format_value(placeholder_value(index), digits)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -521,9 +568,18 @@ fn render_array_node(
             cell.set_stroke_width(1.0)?;
             group.append(&cell)?;
 
+            // Show the declared data value if present, otherwise a placeholder.
+            let value = spec
+                .values
+                .as_ref()
+                .and_then(|v| v.get(r))
+                .and_then(|row| row.get(c))
+                .copied()
+                .unwrap_or_else(|| placeholder_value(r * spec.cols + c));
+
             let text = svg.text(
                 Point::new(x + spec.cell_w / 2.0, y + spec.cell_h / 2.0),
-                &format_cell(r * spec.cols + c, spec.digits),
+                &format_value(value, spec.digits),
             )?;
             text.set_fill(CELL_TEXT)?;
             text.set_attr("text-anchor", "middle")?;

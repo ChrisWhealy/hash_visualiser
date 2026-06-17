@@ -6,7 +6,7 @@ use crate::{
         ebnf_03::{ContextBlock, ContextItem},
         ebnf_04::FnDef,
         ebnf_05::{HashBlock, HashItem},
-        ebnf_06::NodeDecl,
+        ebnf_06::{DataDecl, NodeDecl, PropValue},
         ebnf_07::{WireDecl, WireEndpoint},
         ebnf_08::FlowDirection,
         ebnf_09::EventHandler,
@@ -27,6 +27,8 @@ pub struct ValidatedGraph {
     pub wires: Vec<WireDecl>,
     pub named_wires: HashMap<String, WireDecl>,
     pub fn_defs: HashMap<String, FnDef>,
+    /// Named data bindings (`data NAME = <literal>`), referenced by a node's `source` property.
+    pub data: HashMap<String, Expr>,
     pub edges: Vec<(String, String)>,
     pub layers: Vec<Vec<String>>,
     pub flow: FlowDirection,
@@ -42,6 +44,7 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
     let mut wires: Vec<WireDecl> = Vec::new();
     let mut named_wires: HashMap<String, WireDecl> = HashMap::new();
     let mut fn_defs: HashMap<String, FnDef> = HashMap::new();
+    let mut data: HashMap<String, Expr> = HashMap::new();
     let mut event_handlers: Vec<EventHandler> = Vec::new();
     let mut flow = FlowDirection::LeftToRight;
     let mut word_size: Option<u64> = None;
@@ -52,6 +55,7 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
             TopItem::Node(n) => insert_node(n, &mut nodes, &mut errors),
             TopItem::Wire(w) => insert_wire(w, &mut wires, &mut named_wires, &mut errors),
             TopItem::FnDef(f) => insert_fn(f, &mut fn_defs, &mut errors),
+            TopItem::Data(d) => insert_data(d, &mut data, &mut errors),
             TopItem::Context(ctx) => {
                 collect_context(ctx, &mut fn_defs, &mut word_size, &mut errors)
             }
@@ -61,6 +65,7 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
                 &mut wires,
                 &mut named_wires,
                 &mut fn_defs,
+                &mut data,
                 &mut event_handlers,
                 &mut flow,
                 &mut word_size,
@@ -87,6 +92,12 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
 
     validate_fn_calls(&fn_defs, &mut errors);
 
+    // Nodes may reference a data binding (`source: NAME`) and apply a function to it (`compute: f(...)`).
+    for node in nodes.values() {
+        validate_node_source(node, &data, &mut errors);
+        validate_node_compute(node, &fn_defs, &mut errors);
+    }
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -106,6 +117,7 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
             wires,
             named_wires,
             fn_defs,
+            data,
             edges,
             layers,
             flow,
@@ -147,6 +159,12 @@ fn insert_fn(f: &FnDef, fn_defs: &mut HashMap<String, FnDef>, errors: &mut Vec<G
     }
 }
 
+fn insert_data(d: &DataDecl, data: &mut HashMap<String, Expr>, errors: &mut Vec<GraphError>) {
+    if data.insert(d.name.clone(), d.value.clone()).is_some() {
+        errors.push(GraphError::DuplicateData(d.name.clone()));
+    }
+}
+
 fn collect_context(
     ctx: &ContextBlock,
     fn_defs: &mut HashMap<String, FnDef>,
@@ -167,6 +185,7 @@ fn collect_hash(
     wires: &mut Vec<WireDecl>,
     named_wires: &mut HashMap<String, WireDecl>,
     fn_defs: &mut HashMap<String, FnDef>,
+    data: &mut HashMap<String, Expr>,
     event_handlers: &mut Vec<EventHandler>,
     flow: &mut FlowDirection,
     word_size: &mut Option<u64>,
@@ -177,6 +196,7 @@ fn collect_hash(
             HashItem::Node(n) => insert_node(n, nodes, errors),
             HashItem::Wire(w) => insert_wire(w, wires, named_wires, errors),
             HashItem::FnDef(f) => insert_fn(f, fn_defs, errors),
+            HashItem::Data(d) => insert_data(d, data, errors),
             HashItem::Context(ctx) => collect_context(ctx, fn_defs, word_size, errors),
             HashItem::EventHandler(e) => event_handlers.push(e.clone()),
             HashItem::Layout(f) => *flow = f.clone(),
@@ -197,6 +217,58 @@ fn validate_wire(wire: &WireDecl, nodes: &HashMap<String, NodeDecl>, errors: &mu
                     wire_name: name.map(str::to_owned),
                     endpoint: n.clone(),
                 });
+            }
+        }
+    }
+}
+
+/// A node's `source: NAME` property must name a declared data binding.
+fn validate_node_source(
+    node: &NodeDecl,
+    data: &HashMap<String, Expr>,
+    errors: &mut Vec<GraphError>,
+) {
+    for p in &node.properties {
+        if p.name == "source" {
+            if let PropValue::Expr(Expr::Ident(name)) = &p.value {
+                if !data.contains_key(name) {
+                    errors.push(GraphError::UndeclaredData {
+                        node: node.name.clone(),
+                        name: name.clone(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Functions called in a node's `compute` expression (e.g. `compute: ThetaC(state)`) must exist with matching arity.
+fn validate_node_compute(
+    node: &NodeDecl,
+    fn_defs: &HashMap<String, FnDef>,
+    errors: &mut Vec<GraphError>,
+) {
+    for p in &node.properties {
+        if p.name == "compute" {
+            if let PropValue::Expr(e) = &p.value {
+                let mut calls: Vec<(String, usize)> = Vec::new();
+                walk_expr_calls(e, &mut calls);
+                for (callee, arity) in calls {
+                    match fn_defs.get(&callee) {
+                        None => errors.push(GraphError::UndeclaredFn {
+                            caller: node.name.clone(),
+                            callee,
+                        }),
+                        Some(def) if def.params.len() != arity => {
+                            errors.push(GraphError::ArityMismatch {
+                                name: callee,
+                                expected: def.params.len(),
+                                got: arity,
+                            })
+                        }
+                        Some(_) => {}
+                    }
+                }
             }
         }
     }
@@ -339,6 +411,11 @@ fn walk_expr_calls(expr: &Expr, calls: &mut Vec<(String, usize)>) {
         }
         Expr::Comprehension { body, .. } => walk_expr_calls(body, calls),
         Expr::Reduce { array, .. } => walk_expr_calls(array, calls),
+        Expr::Array(elems) => {
+            for e in elems {
+                walk_expr_calls(e, calls);
+            }
+        }
         Expr::Integer(_) | Expr::HexLit(_) | Expr::Ident(_) => {}
     }
 }

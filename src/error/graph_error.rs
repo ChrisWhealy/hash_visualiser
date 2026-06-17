@@ -4,6 +4,8 @@ pub enum GraphError {
     DuplicateNode(String),
     DuplicateWireName(String),
     DuplicateFn(String),
+    DuplicateData(String),
+    UndeclaredData { node: String, name: String },
     UndeclaredNode { wire_name: Option<String>, endpoint: String },
     UndeclaredWire(String),
     UndeclaredFn { caller: String, callee: String },
@@ -22,6 +24,10 @@ impl std::fmt::Display for GraphError {
                 write!(f, "duplicate wire name '{n}'"),
             GraphError::DuplicateFn(n) =>
                 write!(f, "duplicate function name '{n}'"),
+            GraphError::DuplicateData(n) =>
+                write!(f, "duplicate data binding '{n}'"),
+            GraphError::UndeclaredData { node, name } =>
+                write!(f, "node '{node}' references undeclared data binding '{name}'"),
             GraphError::UndeclaredNode { wire_name: Some(w), endpoint } =>
                 write!(f, "wire '{w}' references undeclared node '{endpoint}'"),
             GraphError::UndeclaredNode { wire_name: None, endpoint } =>

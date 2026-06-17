@@ -15,6 +15,7 @@ pub enum Token {
     Constant,
     Contains,
     Context,
+    Data,
     Emit,
     Fn,
     For,

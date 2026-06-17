@@ -7,6 +7,7 @@ pub(crate) mod ebnf_07;
 pub(crate) mod ebnf_08;
 pub(crate) mod ebnf_09;
 pub(crate) mod ebnf_10;
+pub(crate) mod ebnf_11;
 
 use crate::{
     ast::{ebnf_02::Program, ebnf_10::Duration},

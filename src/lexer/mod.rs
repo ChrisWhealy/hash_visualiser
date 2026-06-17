@@ -281,6 +281,7 @@ fn keyword_or_ident(s: &str) -> Token {
         "constant" => Token::Constant,
         "contains" => Token::Contains,
         "context" => Token::Context,
+        "data" => Token::Data,
         "emit" => Token::Emit,
         "fn" => Token::Fn,
         "for" => Token::For,

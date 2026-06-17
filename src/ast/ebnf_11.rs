@@ -27,6 +27,9 @@ pub enum Expr {
 
     /// Reduction `reduce <op> over <array>`: folds an array to a scalar with an associative binary operator.
     Reduce { op: BinOp, array: Box<Expr> },
+
+    /// Array literal `[ e0, e1, … ]`. Nests for multi-dimensional data, e.g. `[[1, 2], [3, 4]]`.
+    Array(Vec<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
