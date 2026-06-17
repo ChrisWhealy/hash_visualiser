@@ -35,7 +35,7 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or(8000);
     let addr = ("127.0.0.1", port);
 
-    println!("\n  hash-visualiser running on http://127.0.0.1:{port}/\n");
+    println!("\n  hash-visualiser running on http://127.0.0.1:{port}/web\n");
 
     HttpServer::new(move || {
         App::new()
