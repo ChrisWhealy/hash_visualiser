@@ -1,0 +1,39 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 04 — Bitwise OR
+//
+// The second bitwise logic operation. OR is often used to *set* selected bits — `x or 0x…FF` forces those bits to 1.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+// `or` sets each result bit to 1 where EITHER input bit is 1.
+fn Or(a: u64, b: u64) -> u64 = a or b
+
+// Two complementary patterns OR together to all-ones.
+data A = 0xFF00FF00FF00FF00
+data B = 0x00FF00FF00FF00FF
+
+node a      : register  { label: "a", format: hex64, source: A }
+node b      : register  { label: "b", format: hex64, source: B }
+node result : operation {
+    symbol: "a OR b",
+    format: hex64,
+    compute: Or(a, b),
+    description: """
+# Bitwise OR (`OR`)
+
+Compares `a` and `b` one bit at a time; a result bit is `1` when *either* (or both) of the corresponding input bits is `1`, and `0` only when both are `0`.
+
+`OR`ing with a mask sets every bit that is `1` in the mask and leaves the rest unchanged.
+
+```rust
+assert_eq!(0xFF00FF00FF00FF00u64 | 0x00FF00FF00FF00FF, 0xFFFFFFFFFFFFFFFF);
+```
+"""
+}
+
+layout: left_to_right
+
+wire a -> result
+wire b -> result

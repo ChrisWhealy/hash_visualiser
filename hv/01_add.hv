@@ -1,0 +1,42 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 01 — Modular addition
+//
+// The one *arithmetic* operation common in hash functions. Addition is the only step here that lets a low-order bit
+// influence higher-order bits (via carry), and it deliberately wraps around: the result is kept modulo 2⁶⁴.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words, so addition is performed modulo 2⁶⁴.
+context { word_size: 64 }
+
+// `+` adds the two values, discarding any carry out of the top bit (wrap-around).
+fn Add(a: u64, b: u64) -> u64 = a + b
+
+// 0xFFFFFFFF_FFFFFF00 + 0x200 overflows the 64-bit word; the carry off the top is dropped, leaving 0x…0100.
+data A = 0xFFFFFFFFFFFFFF00
+data B = 0x0000000000000200
+
+node a      : register  { label: "a", format: hex64, source: A }
+node b      : register  { label: "b", format: hex64, source: B }
+node result : operation {
+    symbol: "a + b",
+    format: hex64,
+    compute: Add(a, b),
+    description: """
+# Modular addition (`+`)
+
+Ordinary binary addition, with one twist: the sum is truncated back to the word size, so any carry out of the most
+significant bit is discarded. In other words the arithmetic is performed modulo 2⁶⁴ (or 2³² for a 32-bit word).
+
+Unlike the bitwise operations, addition *propagates carries* — a change low down can ripple all the way up — which is
+what lets a hash function diffuse small input differences across the whole word.
+
+```rust
+assert_eq!(0xFFFFFFFFFFFFFF00u64.wrapping_add(0x200), 0x0000000000000100);
+```
+"""
+}
+
+layout: left_to_right
+
+wire a -> result
+wire b -> result

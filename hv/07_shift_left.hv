@@ -1,0 +1,41 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 07 — Shift left
+//
+// The mirror image of tutorial 06: shift a 64-bit value left (toward the most-significant end) by a number of bits.
+// Same three building blocks — a `fn`, input/operation `node`s, and `wire`s — with the result computed and shown.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+// `shl` is the left shift: vacated low bits are filled with zeros.
+fn ShiftLeft(value: u64, amount: u8) -> u64 = value shl amount
+
+// Shifting 0x0F0F… left by 4 bits slides every nibble up one place, giving 0xF0F0… (the top nibble falls off the end).
+data InputValue  = 0x0F0F0F0F0F0F0F0F
+data ShiftAmount = 0x04
+
+node value  : register  { label: "value",  format: hex64, source: InputValue }
+node amount : constant  { label: "amount", format: hex8,  source: ShiftAmount }
+node result : operation {
+    symbol: "value << amount",
+    format: hex64,
+    compute: ShiftLeft(value, amount),
+    description: """
+# Shift left (`shl`)
+
+Moves every bit of `value` left, toward the most-significant end by `amount` positions.
+Any bit shifted off the high end is discarded and the low bits left vacant are filled with `0`.
+
+Shifting a word of length `b` bits left by `n` is the same as multiplying by `2^n` (modulo `2^b`):
+
+```rust
+assert_eq!(0x0F0F0F0F0F0F0F0Fu64 << 4, 0xF0F0F0F0F0F0F0F0);
+```
+"""
+}
+
+layout: left_to_right
+
+wire value  -> result
+wire amount -> result

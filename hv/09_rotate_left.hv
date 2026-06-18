@@ -1,0 +1,45 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 09 — Rotate left
+//
+// A rotation is a shift that wraps: bits pushed off one end reappear at the other, so no information is lost. Rotations
+// are the workhorse of hash functions (e.g. SHA-256's Σ/σ and SHA-3's ρ steps).
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words, so bits wrap around modulo 64.
+context { word_size: 64 }
+
+// `rotl_u` rotates left: bits shifted off the high end re-enter at the low end.
+fn RotateLeft(value: u64, amount: u8) -> u64 = value rotl_u amount
+
+// Rotating 0x123456789ABCDEF0 left by 8 bits lifts the top byte (0x12) off the high end and wraps it back in at the
+// bottom: 0x3456789ABCDEF012.
+data InputValue  = 0x123456789ABCDEF0
+data RotateBy    = 0x08
+
+node value  : register  { label: "value",  format: hex64, source: InputValue }
+node amount : constant  { label: "amount", format: hex8,  source: RotateBy }
+node result : operation {
+    symbol: "rotl(value, amount)",
+    format: hex64,
+    compute: RotateLeft(value, amount),
+    description: """
+# Rotate left (`rotl_u`)
+
+A *circular* left shift
+
+Every bit moves left toward the most-significant end of the word by `amount` positions.
+
+Any bits that fall off the high end wrap back in at the low end.
+
+No bit value is ever discarded, so a rotation is reversible; that is, it can be undone by rotating in the opposite direction by the same amount.
+
+```rust
+assert_eq!(0x123456789ABCDEF0u64.rotate_left(8), 0x3456789ABCDEF012);
+```
+"""
+}
+
+layout: left_to_right
+
+wire value  -> result
+wire amount -> result

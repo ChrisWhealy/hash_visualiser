@@ -1,0 +1,43 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 10 — Rotate right
+//
+// The mirror of tutorial 09: a circular shift toward the least-significant end. SHA-256 builds its Σ and σ functions
+// entirely from right rotations and right shifts xored together.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words, so bits wrap around modulo 64.
+context { word_size: 64 }
+
+// `rotr_u` rotates right: bits shifted off the low end re-enter at the high end.
+fn RotateRight(value: u64, amount: u8) -> u64 = value rotr_u amount
+
+// Rotating 0x123456789ABCDEF0 right by 8 bits drops the low byte (0xF0) off the bottom and wraps it back in at the
+// top: 0xF0123456789ABCDE.
+data InputValue  = 0x123456789ABCDEF0
+data RotateBy    = 0x08
+
+node value  : register  { label: "value",  format: hex64, source: InputValue }
+node amount : constant  { label: "amount", format: hex8,  source: RotateBy }
+node result : operation {
+    symbol: "rotr(value, amount)",
+    format: hex64,
+    compute: RotateRight(value, amount),
+    description: """
+# Rotate right (`rotr_u`)
+
+Every bit moves right toward the least-significant end of the word by `amount` positions.
+
+Any bits that fall off the low end wrap back in at the high end.
+
+No bit value is ever discarded, so a rotation is reversible; that is, it can be undone by rotating in the opposite direction by the same amount.
+
+```rust
+assert_eq!(0x123456789ABCDEF0u64.rotate_right(8), 0xF0123456789ABCDE);
+```
+"""
+}
+
+layout: left_to_right
+
+wire value  -> result
+wire amount -> result

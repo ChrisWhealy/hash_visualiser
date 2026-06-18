@@ -1,0 +1,44 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 08 — Arithmetic shift right
+//
+// Like the logical right shift in tutorial 06, but the *sign* of the value is preserved: the vacated high bits are
+// filled with copies of the top (sign) bit rather than with zeros. Compare the two side by side to see the difference.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+// `shr_s` is the signed (arithmetic) right shift: the sign bit is replicated into the vacated high bits.
+fn ArithShiftRight(value: u64, amount: u8) -> u64 = value shr_s amount
+
+// 0xFF000000_00000000 has its top bit set, so it is "negative". Shifting right by 8 fills the new high bits with 1s,
+// giving 0xFFFF0000_00000000 — whereas a *logical* shift (tutorial 01) would have filled them with 0s (0x00FF0000…).
+data InputValue  = 0xFF00000000000000
+data ShiftAmount = 0x08
+
+node value  : register  { label: "value",  format: hex64, source: InputValue }
+node amount : constant  { label: "amount", format: hex8,  source: ShiftAmount }
+node result : operation {
+    symbol: "value >> amount",
+    format: hex64,
+    compute: ArithShiftRight(value, amount),
+    description: """
+# Arithmetic shift right (`shr_s`)
+
+A right shift that preserves the value in the sign bit (the leftmost bit of the word).
+
+Any high bits left vacant are filled with copies of the sign bit, not arbitrarily filled with `0`.
+
+For a value interpreted as a two's-complement signed integer this keeps negatives values negative, and matches integer division by `2^n` rounding toward negative infinity.
+
+```rust
+let v: i64 = 0xFF00000000000000u64 as i64; // negative (top bit set)
+assert_eq!((v >> 8) as u64, 0xFFFF000000000000);
+```
+"""
+}
+
+layout: left_to_right
+
+wire value  -> result
+wire amount -> result

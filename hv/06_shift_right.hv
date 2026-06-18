@@ -1,0 +1,55 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 06 — Shift right
+//
+// The simplest possible function: take a 64-bit value and a shift amount (in bits), and produce the value shifted
+// right by that many bits. This introduces the three core building blocks of a `.hv` file:
+//
+//   1. a `fn`   — a pure expression naming its typed inputs and its return type
+//   2. `node`s  — the boxes that appear in the diagram (here: two inputs and one operation)
+//   3. `wire`s  — the arrows showing which node feeds which
+//
+// The operation node names the function via `symbol` and applies it via `compute`. Click the `value >> amount` box to
+// read its description.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+// `shr_u` is the unsigned (logical) right shift: vacated high bits are filled with zeros.
+fn ShiftRight(value: u64, amount: u8) -> u64 = value shr_u amount
+
+// The input value and shift amount are supplied as `data`. The diagram then shows the actual "before" value and the
+// computed "after" value flowing through the operation. Shifting 0xF0F0… right by 4 bits slides every nibble down one
+// place, giving 0x0F0F….
+data InputValue  = 0xF0F0F0F0F0F0F0F0
+data ShiftAmount = 0x04
+
+node value  : register  { label: "value",  format: hex64, source: InputValue }
+node amount : constant  { label: "amount", format: hex8,  source: ShiftAmount }
+node result : operation {
+    symbol: "value >> amount",
+    format: hex64,
+    compute: ShiftRight(value, amount),
+    description: """
+# Shift right (`shr_u`)
+
+Moves every bit of `value` right, toward the least-significant end by `amount` positions.
+
+Any bit shifted off the right-handend is discarded; the high bits left vacant are filled with `0` (this is the *unsigned*, or *logical*, shift).
+
+Shifting right by `n` is the same as integer-dividing by `2^n`:
+
+```rust
+fn shift_right(value: u64, amount: u8) -> u64 {
+    value >> amount
+}
+
+assert_eq!(shift_right(0b1011_0000, 4), 0b0000_1011); // 176 >> 4 == 11
+```
+"""
+}
+
+layout: left_to_right
+
+wire value  -> result
+wire amount -> result

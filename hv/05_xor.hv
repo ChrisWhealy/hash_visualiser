@@ -1,0 +1,39 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 05 — Bitwise XOR
+//
+// The third bitwise logic operation, and the one hash functions lean on most: XOR mixes two values reversibly
+// (xoring with the same value twice cancels out), which makes it ideal for combining data without losing information.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+// `xor` sets each result bit to 1 where the two input bits DIFFER.
+fn Xor(a: u64, b: u64) -> u64 = a xor b
+
+data A = 0xFF00FF00FF00FF00
+data B = 0x0F0F0F0F0F0F0F0F
+
+node a      : register  { label: "a", format: hex64, source: A }
+node b      : register  { label: "b", format: hex64, source: B }
+node result : operation {
+    symbol: "a XOR b",
+    format: hex64,
+    compute: Xor(a, b),
+    description: """
+# Bitwise Exclusive Or (`XOR`)
+
+Compares `a` and `b` one bit at a time; a result bit is `1` only when the two input bits *differ*, and `0` when they are the same.
+
+`XOR` is its own inverse — `(x xor k) xor k == x` — which is why it is the natural way to fold one value into another and later peel it back out.
+
+```rust
+assert_eq!(0xFF00FF00FF00FF00u64 ^ 0x0F0F0F0F0F0F0F0F, 0xF00FF00FF00FF00F);
+```
+"""
+}
+
+layout: left_to_right
+
+wire a -> result
+wire b -> result

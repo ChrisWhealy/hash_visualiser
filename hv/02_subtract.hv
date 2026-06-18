@@ -1,0 +1,40 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 02 — Modular subtraction
+//
+// The counterpart to tutorial 09. Subtraction also wraps: when the result would go below zero it borrows around,
+// landing on the value modulo 2⁶⁴ (the two's-complement representation of the negative result).
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words, so subtraction is performed modulo 2⁶⁴.
+context { word_size: 64 }
+
+// `-` subtracts the two values, borrowing around the bottom of the word when the result would be negative.
+fn Subtract(a: u64, b: u64) -> u64 = a - b
+
+// 0x100 - 0x200 would be negative; modulo 2⁶⁴ it wraps to 0xFFFFFFFF_FFFFFF00.
+data A = 0x0000000000000100
+data B = 0x0000000000000200
+
+node a      : register  { label: "a", format: hex64, source: A }
+node b      : register  { label: "b", format: hex64, source: B }
+node result : operation {
+    symbol: "a - b",
+    format: hex64,
+    compute: Subtract(a, b),
+    description: """
+# Modular subtraction (`-`)
+
+Binary subtraction with wrap-around: when `a` is smaller than `b` the result would be negative, so it borrows around
+the bottom of the word and lands on the answer modulo 2⁶⁴ — exactly the two's-complement encoding of the negative
+value. Equivalently, `a - b == a + (2⁶⁴ - b)`.
+
+```rust
+assert_eq!(0x0000000000000100u64.wrapping_sub(0x200), 0xFFFFFFFFFFFFFF00);
+```
+"""
+}
+
+layout: left_to_right
+
+wire a -> result
+wire b -> result
