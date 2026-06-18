@@ -2,10 +2,9 @@
 // Tutorial 01 — Modular addition
 //
 // The one *arithmetic* operation common in hash functions. Addition is the only step here that lets a low-order bit
-// influence higher-order bits (via carry), and it deliberately wraps around: the result is kept modulo 2⁶⁴.
+// influence higher-order bits (via carry), and it deliberately wraps around: the result is kept modulo 2^64.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-// All values are 64-bit words, so addition is performed modulo 2⁶⁴.
 context { word_size: 64 }
 
 // `+` adds the two values, discarding any carry out of the top bit (wrap-around).
@@ -24,11 +23,11 @@ node result : operation {
     description: """
 # Modular addition (`+`)
 
-Ordinary binary addition, with one twist: the sum is truncated back to the word size, so any carry out of the most
-significant bit is discarded. In other words the arithmetic is performed modulo 2⁶⁴ (or 2³² for a 32-bit word).
+Ordinary binary addition, with one twist: if the result of the addition exceeds the word size, then any bits that carry out at the high end are simply discarded and the sum is truncated back to the word size.
 
-Unlike the bitwise operations, addition *propagates carries* — a change low down can ripple all the way up — which is
-what lets a hash function diffuse small input differences across the whole word.
+In other words, for a word of length `b` bits, addition is performed modulo `2^b`.
+
+Unlike the bitwise operations, addition *propagates carries* — a change low down can ripple all the way up causing the senior bit to overflow and be thrown away.
 
 ```rust
 assert_eq!(0xFFFFFFFFFFFFFF00u64.wrapping_add(0x200), 0x0000000000000100);

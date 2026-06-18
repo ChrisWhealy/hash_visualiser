@@ -140,9 +140,14 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
     // viewport to the real content at the end.
     let (mut max_x, mut max_y) = (0.0_f64, 0.0_f64);
 
-    // The step buttons live in a fixed transport bar (`#transport`) when the page provides one; otherwise they fall
-    // back to sitting below the diagram.
-    let transport = SvgRoot::create_in("transport", Size::new(TRANSPORT_W, TRANSPORT_H)).ok();
+    // The reduction step buttons live in a fixed transport bar (`#transport`). Only create it when a node actually
+    // feeds a `reduce` and so needs it; otherwise the bar is left empty and the page hides it (CSS `:empty`), so a
+    // scalar function — which has nothing to step through — shows no empty transport footer at all.
+    let transport = if grids.keys().any(|name| reduction_op(name, graph).is_some()) {
+        SvgRoot::create_in("transport", Size::new(TRANSPORT_W, TRANSPORT_H)).ok()
+    } else {
+        None
+    };
 
     for (name, rect) in &placement {
         let decl = &graph.nodes[name];

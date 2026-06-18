@@ -23,10 +23,11 @@ node result : operation {
     compute: Subtract(a, b),
     description: """
 # Modular subtraction (`-`)
+Binary subtraction with wrap-around: for two words `a` and `b`, both of length `l` bits, when `a` is smaller than `b` the result is negative, so it borrows around the bottom of the word and lands on the answer modulo `2^l`.
 
-Binary subtraction with wrap-around: when `a` is smaller than `b` the result would be negative, so it borrows around
-the bottom of the word and lands on the answer modulo 2⁶⁴ — exactly the two's-complement encoding of the negative
-value. Equivalently, `a - b == a + (2⁶⁴ - b)`.
+This gives the correct two's-complement encoding of the negative value.
+
+Equivalently, `a - b == a + (2⁶⁴ - b)`.
 
 ```rust
 assert_eq!(0x0000000000000100u64.wrapping_sub(0x200), 0xFFFFFFFFFFFFFF00);
