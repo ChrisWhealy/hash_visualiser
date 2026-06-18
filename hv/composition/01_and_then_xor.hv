@@ -14,7 +14,11 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 // All values are 64-bit words.
-context { word_size: 64 }
+context {
+    word_size: 64
+}
+
+layout: top_to_bottom
 
 fn And(a: u64, b: u64) -> u64 = a and b
 fn Xor(a: u64, b: u64) -> u64 = a xor b
@@ -62,8 +66,6 @@ assert_eq!(
 ```
 """
 }
-
-layout: left_to_right
 
 wire a  -> ab
 wire b  -> ab
