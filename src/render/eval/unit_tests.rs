@@ -89,6 +89,50 @@ fn should_resolve_node_args_when_computing_node_value() -> Result<(), String> {
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #[test]
+fn should_apply_unary_not() -> Result<(), String> {
+    // hv/binary_operations/11_not.hv
+    let src = "\
+            context { word_size: 64 }\n\
+            fn Not(a: u64) -> u64 = not a\n\
+            data A = 0xFF00FF00FF00FF00\n\
+            node a      : register  { source: A }\n\
+            node result : operation { compute: Not(a) }\n";
+
+    if value_of(src, "result") != Some(0x00FF_00FF_00FF_00FF) {
+        return Err(format!("not wrong: {:?}", value_of(src, "result")));
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_chain_one_operation_into_another() -> Result<(), String> {
+    // hv/composition/01_and_then_xor.hv — the `result` node's `compute` references another *operation* node (`ab`),
+    // so node_value must recurse through it.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn And(a: u64, b: u64) -> u64 = a and b\n\
+            fn Xor(a: u64, b: u64) -> u64 = a xor b\n\
+            data A = 0xFF00FF00FF00FF00\n\
+            data B = 0x0F0F0F0F0F0F0F0F\n\
+            data C = 0x00000000FFFFFFFF\n\
+            node a : register { source: A }\n\
+            node b : register { source: B }\n\
+            node c : register { source: C }\n\
+            node ab     : operation { compute: And(a, b) }\n\
+            node result : operation { compute: Xor(ab, c) }\n";
+
+    if value_of(src, "ab") != Some(0x0F00_0F00_0F00_0F00) {
+        return Err(format!("stage 1 wrong: {:?}", value_of(src, "ab")));
+    }
+    if value_of(src, "result") != Some(0x0F00_0F00_F0FF_F0FF) {
+        return Err(format!("stage 2 wrong: {:?}", value_of(src, "result")));
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
 fn should_compute_tutorial_examples_as_documented() -> Result<(), String> {
     // The exact (op, a, b, expected) tuples used by the 02–10 binary-operation tutorial files, so the rendered
     // "after" value always matches the data and the description's assert.

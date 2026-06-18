@@ -1,0 +1,35 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Tutorial 11 — Bitwise NOT (unary)
+//
+// The odd one out in this folder: NOT is a *unary* operation — it takes a single input rather than two. It completes
+// the set of bitwise logic operations (AND, OR, XOR, NOT).
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+// `not` flips every bit of its single input.
+fn Not(a: u64) -> u64 = not a
+
+data A = 0xFF00FF00FF00FF00
+
+node a      : register  { label: "a", format: hex64, source: A }
+node result : operation {
+    symbol: "NOT a",
+    format: hex64,
+    compute: Not(a),
+    description: """
+# Bitwise Not (`NOT`)
+
+Flips every bit of `a`: each `1` becomes `0` and each `0` becomes `1` (the *one's complement*).
+It is the only Boolean operation that takes a single operand.
+
+```rust
+assert_eq!(!0xFF00FF00FF00FF00u64, 0x00FF00FF00FF00FF);
+```
+"""
+}
+
+layout: left_to_right
+
+wire a -> result

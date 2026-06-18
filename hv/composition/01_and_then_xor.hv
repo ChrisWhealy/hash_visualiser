@@ -1,0 +1,71 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Composition 01 — (a AND b) XOR c
+//
+// The binary-operation tutorials each show a single transform: inputs in, one result out. This is the first example
+// that *chains* two of them, so you can watch an intermediate value be produced by one operation and then consumed by
+// the next. Real hash functions are built entirely from pipelines like this.
+//
+// Data flow:   a, b ─▶ [ AND ] ─▶ (a AND b) ─┐
+//                                            ├─▶ [ XOR ] ─▶ result
+//                                  c ────────┘
+//
+// The `ab` operation node computes `a AND b`; the `result` node XORs that intermediate value with `c`. Each operation
+// node shows its own computed value, so the intermediate result is visible, not hidden inside one function.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// All values are 64-bit words.
+context { word_size: 64 }
+
+fn And(a: u64, b: u64) -> u64 = a and b
+fn Xor(a: u64, b: u64) -> u64 = a xor b
+
+data A = 0xFF00FF00FF00FF00
+data B = 0x0F0F0F0F0F0F0F0F
+data C = 0x00000000FFFFFFFF
+
+node a : register { label: "a", format: hex64, source: A }
+node b : register { label: "b", format: hex64, source: B }
+node c : register { label: "c", format: hex64, source: C }
+
+// Stage 1: a AND b. (A node can't be called `and` — that's the operator keyword — so this one is `ab`.)
+node ab : operation {
+    symbol: "a AND b",
+    format: hex64,
+    compute: And(a, b),
+    description: """
+# Stage 1 — `a AND b`
+
+Bitwise AND of the two inputs, keeping only the bits set in *both*.
+
+This intermediate result then feeds the next stage as one of its inputs.
+"""
+}
+
+// Stage 2: XOR the stage-1 result with c.
+node result : operation {
+    symbol: "(a AND b) XOR c",
+    format: hex64,
+    compute: Xor(ab, c),
+    description: """
+# Stage 2 — `(a AND b) XOR c`
+
+XORs the intermediate value from stage 1 with `c`.
+
+Since XOR flips a bit only when the two inputs differ, the low 32 bits of the stage-1 value (where `c` is all-ones) come
+out inverted, while the high 32 bits (where `c` is zero) pass through unchanged.
+
+```rust
+assert_eq!(
+    (0xFF00FF00FF00FF00u64 & 0x0F0F0F0F0F0F0F0F) ^ 0x00000000FFFFFFFF,
+    0x0F000F00F0FFF0FF,
+);
+```
+"""
+}
+
+layout: left_to_right
+
+wire a  -> ab
+wire b  -> ab
+wire ab -> result
+wire c  -> result

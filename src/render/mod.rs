@@ -798,13 +798,6 @@ fn placeholder_value(index: usize) -> u64 {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Convenience wrapper kept for tests: the placeholder value for `index`, formatted for `digits`.
-#[cfg(test)]
-fn format_cell(index: usize, digits: usize) -> String {
-    format_value(placeholder_value(index), digits)
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Returns a node's string-valued property (e.g. `symbol: "ThetaC"`), if present.
 fn string_prop(decl: &NodeDecl, key: &str) -> Option<String> {
     decl.properties
