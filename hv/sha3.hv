@@ -34,7 +34,7 @@ hash SHA3 {
         description: """
 # Theta-C
 
-For each column `x`, XOR all five lanes in that column down to a single `u64` parity value.
+For each row `x`, XOR all five lanes down to a single `u64` parity value.
 
 ```rust
 fn theta_c(state: &[[u64; 5]; 5]) -> [u64; 5] {

@@ -4,14 +4,15 @@
 //! ```sh
 //! cargo serve
 //! ```
-//! This rebuilds the wasm package (`wasm-pack build --target web --features web`) and then serves the project root, so
-//! the UI lives at <http://127.0.0.1:8000/>.
+//! This rebuilds the wasm package (`wasm-pack build --target web --features web`) and then serves the project root.
+//! The UI lives at <http://127.0.0.1:8000/web>.
 //!
 //! The port number can be overridden using the `PORT` environment variable, e.g. `PORT=9000 cargo serve`.
 //!
 //! Live-reload: rather than have the browser poll for changes, the server watches the `hv/` folder and *pushes* the
 //! `.hv` source to connected clients over a Server-Sent Events stream at `/events` (see [`events`]). The client renders
-//! each message it receives, so editing the `.hv` re-renders the diagram with no network traffic between edits.
+//! each message it receives, so editing the `.hv` re-renders the diagram without the need for continuous polling
+//! between edits.
 
 use std::{
     path::{Path, PathBuf},
@@ -54,8 +55,9 @@ async fn main() -> std::io::Result<()> {
     // care about the most recent version (a lagging client simply skips to the latest).
     let (tx, _rx) = broadcast::channel::<String>(16);
 
-    // Watch the file for changes and push each new version. The watcher must stay alive for the life of the process,
-    // so it is held in this binding (kept across the `.run().await` below).
+    // Watch the directory containing the .hv files for changes and push each new version.
+    // Since the watcher must stay alive for the lifespan of this process, it is held in this binding (kept across the
+    // `.run().await` below).
     let _watcher = spawn_watcher(&hv_path, tx.clone());
 
     let state = web::Data::new(AppState {
@@ -94,6 +96,7 @@ async fn events(state: web::Data<AppState>) -> HttpResponse {
 
     // Snapshot first, so a freshly-connected client renders without waiting for the next edit.
     let initial = std::fs::read_to_string(&state.hv_path).unwrap_or_default();
+    // Replace the initial state with a new pending-edit state
     let initial = stream::once(async move { Ok::<_, std::io::Error>(sse_event(&initial)) });
 
     // Then forward each broadcast version; a `Lagged` error just means we skip ahead to the latest.
@@ -109,9 +112,9 @@ async fn events(state: web::Data<AppState>) -> HttpResponse {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Encodes `content` as a single SSE message. Each line becomes its own `data:` field (the spec joins them back with
-/// `\n`), and the leading space after `data:` is the optional separator the client strips — so the file's own
-/// indentation is preserved.
+/// Encodes `content` as a single server-side event (SSE) message.
+/// Each line becomes its own `data:` field (the spec joins them back with `\n`), and the leading space after `data:` is
+/// the optional separator the client strips — so the file's own indentation is preserved.
 fn sse_event(content: &str) -> web::Bytes {
     let mut out = String::with_capacity(content.len() + 16);
     for line in content.split('\n') {
@@ -124,16 +127,19 @@ fn sse_event(content: &str) -> web::Bytes {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Watches the directory containing `hv_path` and broadcasts the file's contents whenever they change.
+/// Watches the directory indetified by `hv_path` and broadcasts a file's contents whenever it changes.
 ///
-/// The parent directory is watched (not the file directly) so atomic-save renames used by many editors are still seen.
-/// The last-sent contents are remembered so duplicate filesystem events don't trigger duplicate broadcasts. Returns the
-/// watcher, which the caller must keep alive.
+/// The watcher observes the directory in which the .hv files live and not the files themselves.  This means:
+/// - The .hv files may only live in this watched directory
+/// - Atomic-save renames used by many editors are still seen
+/// - The last-sent contents are remembered so duplicate filesystem events don't trigger duplicate broadcasts
+/// 
+/// Returns the watcher, which the caller must keep alive.
 fn spawn_watcher(hv_path: &Path, tx: broadcast::Sender<String>) -> impl Watcher {
     let file = hv_path.to_path_buf();
     let watch_dir = hv_path
         .parent()
-        .expect("hv file must live in a directory")
+        .expect(".hv files must live in a directory under the document root")
         .to_path_buf();
 
     let mut last = std::fs::read_to_string(&file).ok();
@@ -146,7 +152,7 @@ fn spawn_watcher(hv_path: &Path, tx: broadcast::Sender<String>) -> impl Watcher 
             && last.as_deref() != Some(content.as_str())
         {
             last = Some(content.clone());
-            let _ = tx.send(content); // Err only means no clients are connected — harmless.
+            let _ = tx.send(content); // This error is harmless as it simply means no clients are currently connected
         }
     })
     .expect("create filesystem watcher");
