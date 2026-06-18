@@ -61,19 +61,45 @@ async function selectFile(name) {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-async function loadFileList() {
-  const files = await fetch(FILES_URL).then((r) => r.json());
+// Rebuild the sidebar from a list of file names, marking the currently-selected one active.
+function renderFileList(files) {
   fileList.replaceChildren();
 
   for (const name of files) {
     const li = document.createElement('li');
     li.textContent = name;
     li.dataset.file = name;
+    li.classList.toggle('active', name === currentFile);
     li.addEventListener('click', () => selectFile(name));
     fileList.appendChild(li);
   }
+}
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+async function loadFileList() {
+  const files = await fetch(FILES_URL).then((r) => r.json());
+  renderFileList(files);
   return files;
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Apply a file list pushed by the server (a .hv file was created or deleted): rebuild the sidebar, and if the file
+// being shown has gone, fall back to a default (or clear the diagram when no files remain).
+function applyFileList(files) {
+  renderFileList(files);
+
+  if (files.includes(currentFile)) return; // current selection still exists — keep showing it
+
+  if (files.length) {
+    selectFile(files.includes(DEFAULT_FILE) ? DEFAULT_FILE : files[0]);
+  } else {
+    currentFile = null;
+    lastSource = null;
+    app.innerHTML = '';
+    transport.innerHTML = '';
+    description.innerHTML = '';
+    description.removeAttribute('data-shown');
+  }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -87,14 +113,20 @@ if (files.length) {
   await selectFile(files.includes(DEFAULT_FILE) ? DEFAULT_FILE : files[0]);
 }
 
-// EventSource pushes a { file, content } message whenever any .hv file changes; re-render only when the change is to the
-// file we're currently showing. EventSource also reconnects automatically if the connection drops.
+// EventSource pushes tagged messages as the hv/ directory changes:
+//   { kind: 'file',  file, content } — a file's contents changed; re-render if it's the one we're showing.
+//   { kind: 'files', files }         — a file was created or deleted; refresh the sidebar.
+// EventSource also reconnects automatically if the connection drops.
 const events = new EventSource(EVENTS_URL);
 
 events.onmessage = (e) => {
-  const { file, content } = JSON.parse(e.data);
+  const msg = JSON.parse(e.data);
 
-  if (file === currentFile) render(content);
+  if (msg.kind === 'file') {
+    if (msg.file === currentFile) render(msg.content);
+  } else if (msg.kind === 'files') {
+    applyFileList(msg.files);
+  }
 };
 
 events.onerror = () => console.warn('live-reload stream interrupted; reconnecting…');

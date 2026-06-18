@@ -32,12 +32,14 @@ use tokio_stream::wrappers::BroadcastStream;
 /// sidebar, served statically, and watched for live-reload.
 const HV_DIR: &str = "hv";
 
-/// A single live-reload message: the `.hv` file that changed and its new contents. Serialised to JSON for the SSE
-/// stream so the client can re-render only when the *currently selected* file changed.
-#[derive(Clone, Serialize)]
-struct FileUpdate {
-    file: String,
-    content: String,
+/// A live-reload message pushed to clients over the SSE stream, serialised to JSON and tagged by `kind`:
+/// - `file`  — a `.hv` file's contents changed; the client re-renders if it is the one currently selected.
+/// - `files` — the directory listing changed (a file was created or deleted); the client refreshes its sidebar.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Message {
+    File { file: String, content: String },
+    Files { files: Vec<String> },
 }
 
 /// Shared state handed to request handlers.
@@ -88,7 +90,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .app_data(state.clone())
-            .service(files)
+            .service(list_files)
             .service(events)
             .service(Files::new("/", root.clone()).index_file("index.html"))
     })
@@ -100,17 +102,17 @@ async fn main() -> std::io::Result<()> {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Lists the `.hv` files available to render, as a JSON array of file names (sorted), for the sidebar.
 #[get("/api/files")]
-async fn files(state: web::Data<AppState>) -> web::Json<Vec<String>> {
+async fn list_files(state: web::Data<AppState>) -> web::Json<Vec<String>> {
     web::Json(read_hv_files(&state.hv_dir).into_keys().collect())
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Server-Sent Events stream of `.hv` changes.
 ///
-/// Each time any watched `.hv` file changes, the client receives one JSON message (`{ "file", "content" }`); it
-/// re-renders only if the changed file is the one currently selected. The initial render comes from the client fetching
-/// the selected file directly, so no snapshot is sent on connect. The browser's `EventSource` reconnects automatically
-/// if the stream drops.
+/// The client receives a JSON [`Message`] whenever the watched directory changes: a `file` message (re-render if it is
+/// the selected file) or a `files` message (refresh the sidebar listing). The initial render and listing come from the
+/// client fetching them directly, so no snapshot is sent on connect. The browser's `EventSource` reconnects
+/// automatically if the stream drops.
 #[get("/events")]
 async fn events(state: web::Data<AppState>) -> HttpResponse {
     let rx = state.tx.subscribe();
@@ -161,15 +163,24 @@ fn read_hv_files(dir: &Path) -> BTreeMap<String, String> {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Watches `hv_dir` and broadcasts a `FileUpdate` (as JSON) whenever one of its `.hv` files changes.
+/// Broadcasts `msg` (as JSON) to every connected SSE client. A send error just means no clients are connected.
+fn broadcast(tx: &broadcast::Sender<String>, msg: &Message) {
+    if let Ok(json) = serde_json::to_string(msg) {
+        let _ = tx.send(json);
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Watches `hv_dir` and broadcasts the appropriate [`Message`] whenever its `.hv` files change.
 ///
 /// The directory is watched (not the individual files) so:
-/// - new `.hv` files and atomic-save renames used by many editors are still seen
+/// - file creations/deletions, as well as atomic-save renames used by many editors, are all seen
 /// - all `.hv` files share a single watcher
 ///
-/// On every filesystem event the directory is re-scanned and each file whose contents differ from what was last
-/// broadcast is published, so duplicate events don't trigger duplicate broadcasts. Returns the watcher, which the
-/// caller must keep alive.
+/// On every filesystem event the directory is re-scanned against the last seen state: a changed listing emits a
+/// `files` message (so clients refresh their sidebar) and each file whose contents changed emits a `file` message.
+/// Comparing against the last state means duplicate filesystem events don't trigger duplicate broadcasts. Returns the
+/// watcher, which the caller must keep alive.
 fn spawn_watcher(hv_dir: &Path, tx: broadcast::Sender<String>) -> impl Watcher {
     let dir = hv_dir.to_path_buf();
     let mut last = read_hv_files(&dir);
@@ -178,18 +189,21 @@ fn spawn_watcher(hv_dir: &Path, tx: broadcast::Sender<String>) -> impl Watcher {
         if res.is_err() {
             return;
         }
-        for (file, content) in read_hv_files(&dir) {
-            if last.get(&file).map(String::as_str) != Some(content.as_str()) {
-                let update = FileUpdate {
-                    file: file.clone(),
-                    content: content.clone(),
-                };
-                last.insert(file, content);
-                if let Ok(json) = serde_json::to_string(&update) {
-                    let _ = tx.send(json); // Err only means no clients are connected — harmless.
-                }
+        let current = read_hv_files(&dir);
+
+        // A created or deleted `.hv` file changes the listing: tell clients to refresh their file list.
+        if current.keys().ne(last.keys()) {
+            broadcast(&tx, &Message::Files { files: current.keys().cloned().collect() });
+        }
+
+        // Push the new contents of any file whose body changed (covers edits and newly created files).
+        for (file, content) in &current {
+            if last.get(file).map(String::as_str) != Some(content.as_str()) {
+                broadcast(&tx, &Message::File { file: file.clone(), content: content.clone() });
             }
         }
+
+        last = current;
     })
     .expect("create filesystem watcher");
 

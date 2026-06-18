@@ -1,3 +1,4 @@
+mod eval;
 mod layout;
 pub(crate) mod rect;
 
@@ -59,6 +60,9 @@ const LIGHT_BLACK: &str = "#111111";
 /// Inset (px) of the "ⓘ" description badge from a node's top-right corner.
 const DESC_ICON_INSET: f64 = 12.0;
 
+/// Padding (px) of an operation node's coloured card around its inner label + value cell, so the card fully frames it.
+const OP_CARD_PAD: f64 = 10.0;
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Create live SVG handles for everything described in a `.hv` file.
 ///
@@ -111,11 +115,11 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
 
     let sizes: HashMap<String, Size> = graph
         .nodes
-        .keys()
-        .map(|name| {
+        .iter()
+        .map(|(name, decl)| {
             let size = grids
                 .get(name)
-                .map(grid_size)
+                .map(|spec| grid_footprint(decl, spec))
                 .unwrap_or_else(|| Size::new(NODE_W, NODE_H));
             (name.clone(), size)
         })
@@ -170,6 +174,9 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
                         cells,
                     )?
                 }
+                // A single-row grid (e.g. a scalar "before"/"after" value) has nothing to step through, so it gets no
+                // step buttons. Multi-row data grids still do.
+                None if spec.rows <= 1 => (Vec::new(), Point::new(origin.x + spec.cell_w, grid_bottom)),
                 None => {
                     let btn_origin = Point::new(origin.x, grid_bottom + BTN_GAP);
                     (
@@ -505,7 +512,9 @@ struct GridSpec {
 /// The shape comes from the node's declared data (`source: NAME`) when present, otherwise it is inferred from the type
 /// of the function the node feeds.
 fn grid_spec(name: &str, decl: &NodeDecl, graph: &ValidatedGraph, ch: f64) -> Option<GridSpec> {
-    let values = node_data_matrix(decl, graph);
+    // Prefer a 2D-array `source` (a grid of values); otherwise fall back to a single scalar value (the node's literal
+    // data or its computed `compute` result) shown in a 1×1 cell, so plain "before"/"after" values are visualised.
+    let values = node_data_matrix(decl, graph).or_else(|| eval::node_value(decl, graph).map(|v| vec![vec![v]]));
     let (rows, cols) = match &values {
         Some(rows) if !rows.is_empty() => (rows.len(), rows[0].len()),
         _ => inferred_grid_shape(name, graph)?,
@@ -716,6 +725,19 @@ fn grid_size(spec: &GridSpec) -> Size {
     )
 }
 
+/// Padding drawn around a node's inner content by its coloured card. Only operation nodes get a card (and so a frame);
+/// everything else is zero.
+fn card_pad(decl: &NodeDecl) -> f64 {
+    if matches!(decl.kind, NodeKind::Operation) { OP_CARD_PAD } else { 0.0 }
+}
+
+/// A node's reserved footprint: its grid plus any card padding, so layout keeps neighbours clear of the framed card.
+fn grid_footprint(decl: &NodeDecl, spec: &GridSpec) -> Size {
+    let pad = card_pad(decl);
+    let base = grid_size(spec);
+    Size::new(base.width + 2.0 * pad, base.height + 2.0 * pad)
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Cell width (user units) for a value of `digits` hex digits, given the measured monospace advance `ch`.
 ///
@@ -816,8 +838,25 @@ fn render_array_node(
     let group = svg.group()?;
     group.set_attr("data-node", &decl.name)?;
 
+    // An `operation` rendered as a value grid (its computed "after" result) keeps the coloured, bordered card of a
+    // normal operation box, so it still reads as a transform rather than a bare data cell — and a description badge
+    // stays visible against it. The card fully frames the inner label + value cell, which are inset by `pad`; data
+    // nodes (registers/constants) have no padding and show their values as plain cells.
+    let pad = card_pad(decl);
+    if matches!(decl.kind, NodeKind::Operation) {
+        let card = svg.rect(Point::new(origin.x, origin.y), grid_footprint(decl, spec))?;
+        card.set_fill(fill_for(&decl.kind))?;
+        card.set_stroke("black")?;
+        card.set_stroke_width(1.5)?;
+        card.set_attr("rx", "6")?;
+        group.append(&card)?;
+    }
+
+    // Top-left of the inner content (label band + cells), framed by `pad` of card on every side.
+    let inner = Point::new(origin.x + pad, origin.y + pad);
+
     let title = svg.text(
-        Point::new(origin.x, origin.y + spec.label_h * GRID_LABEL_BASELINE),
+        Point::new(inner.x, inner.y + spec.label_h * GRID_LABEL_BASELINE),
         &node_label(decl),
     )?;
     title.set_fill(PALE_BLUE_GREY)?;
@@ -826,14 +865,14 @@ fn render_array_node(
     title.set_attr("font-weight", "600")?;
     group.append(&title)?;
 
-    let grid_top = origin.y + spec.label_h;
+    let grid_top = inner.y + spec.label_h;
     let mut cells: Vec<Vec<SvgNode>> = Vec::with_capacity(spec.rows);
 
     for r in 0..spec.rows {
         let mut row_cells = Vec::with_capacity(spec.cols);
 
         for c in 0..spec.cols {
-            let x = origin.x + c as f64 * (spec.cell_w + spec.cell_gap);
+            let x = inner.x + c as f64 * (spec.cell_w + spec.cell_gap);
             let y = grid_top + r as f64 * (spec.cell_h + spec.cell_gap);
 
             let cell = svg.rect(Point::new(x, y), Size::new(spec.cell_w, spec.cell_h))?;

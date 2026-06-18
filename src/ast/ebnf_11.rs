@@ -64,9 +64,9 @@ pub enum BinOp {
 impl std::fmt::Display for BinOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinOp::Or => write!(f, "or")?,
-            BinOp::Xor => write!(f, "xor")?,
-            BinOp::And => write!(f, "and")?,
+            BinOp::Or => write!(f, "OR")?,
+            BinOp::Xor => write!(f, "XOR")?,
+            BinOp::And => write!(f, "AND")?,
             BinOp::Add => write!(f, "+")?,
             BinOp::Sub => write!(f, "-")?,
             BinOp::Shl => write!(f, "shl")?,
