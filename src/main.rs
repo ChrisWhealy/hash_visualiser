@@ -1,5 +1,8 @@
 use hash_visualiser::BUILTIN_EXAMPLE;
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Print the abstract syntax tree of the supplied .hv file, or the built-in example if no file is provided.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 fn main() {
     let src = match std::env::args().nth(1) {
         Some(path) => std::fs::read_to_string(&path)

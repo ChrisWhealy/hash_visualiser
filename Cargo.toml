@@ -22,7 +22,8 @@ name = "hash_visualiser"
 path = "src/main.rs"
 
 [features]
-# Enables the browser/WebAssembly entry point (`src/web.rs`). Built via `wasm-pack build --target web --features web`.
+# Enables the browser/WebAssembly entry point (`src/web.rs`).
+# Built via `wasm-pack build --target web --features web`.
 web = ["dep:wasm-bindgen"]
 
 [dependencies]
