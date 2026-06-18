@@ -48,29 +48,52 @@ body {
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   File list
 */
-#file-list {
+#file-list,
+#file-list ul.tree {
     list-style: none;
     margin: 0;
     padding: 0;
 }
 
-#file-list li {
+/* Files inside a subdirectory are indented one step under their folder. */
+#file-list ul.tree {
+    padding-left: 0.85rem;
+}
+
+/* Shared row appearance for selectable files and clickable folder labels. */
+#file-list li.file,
+#file-list .folder-label {
     padding: 0.4rem 0.6rem;
     border-radius: 6px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 0.9rem;
-    color: var(--ink);
     cursor: pointer;
     user-select: none;
 }
 
-#file-list li:hover {
+#file-list li.file {
+    color: var(--ink);
+}
+
+#file-list li.file:hover,
+#file-list .folder-label:hover {
     background: rgba(109, 179, 242, 0.10);
 }
 
-#file-list li.active {
+#file-list li.file.active {
     background: var(--accent);
     color: var(--bg);
+}
+
+/* Folder rows: a muted label with a disclosure caret that expands/collapses its contents. */
+#file-list .folder-label {
+    color: var(--muted);
+}
+
+#file-list .caret {
+    display: inline-block;
+    width: 1em;
+    color: var(--muted);
 }
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

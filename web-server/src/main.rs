@@ -143,23 +143,33 @@ fn sse_event(content: &str) -> web::Bytes {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Reads every `.hv` file in `dir`, returning a name → contents map. Sorted (it's a `BTreeMap`) so the file list is
-/// stable; unreadable files and non-`.hv` entries are skipped.
+/// Reads every `.hv` file under `dir` (recursively, into subdirectories), returning a relative-path → contents map.
+/// Sorted (it's a `BTreeMap`) so the file list is stable; unreadable files and non-`.hv` entries are skipped.
 fn read_hv_files(dir: &Path) -> BTreeMap<String, String> {
     let mut sources = BTreeMap::new();
+    collect_hv_files(dir, dir, &mut sources);
+    sources
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Recursively collects the `.hv` files under `root`, keyed by their path *relative* to `root` (forward-slashed, e.g.
+/// `binary_operations/01_add.hv`) so subdirectories are represented in the listing and served URLs.
+fn collect_hv_files(root: &Path, dir: &Path, out: &mut BTreeMap<String, String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return sources;
+        return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "hv")
-            && let Some(name) = path.file_name().and_then(|n| n.to_str())
+        if path.is_dir() {
+            collect_hv_files(root, &path, out);
+        } else if path.extension().is_some_and(|ext| ext == "hv")
+            && let Ok(rel) = path.strip_prefix(root)
+            && let Some(rel) = rel.to_str()
             && let Ok(content) = std::fs::read_to_string(&path)
         {
-            sources.insert(name.to_string(), content);
+            out.insert(rel.replace(std::path::MAIN_SEPARATOR, "/"), content);
         }
     }
-    sources
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -171,14 +181,15 @@ fn broadcast(tx: &broadcast::Sender<String>, msg: &Message) {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Watches `hv_dir` and broadcasts the appropriate [`Message`] whenever its `.hv` files change.
+/// Watches `hv_dir` and broadcasts the appropriate [`Message`] whenever its content changes.
 ///
-/// The directory is watched (not the individual files) so:
-/// - file creations/deletions, as well as atomic-save renames used by many editors, are all seen
+/// The directory is watched recursively (not the individual files) so:
+/// - file creations/deletions, changes in subdirectories, and atomic-save renames are all seen
 /// - all `.hv` files share a single watcher
 ///
 /// On every filesystem event the directory is re-scanned against the last seen state: a changed listing emits a
 /// `files` message (so clients refresh their sidebar) and each file whose contents changed emits a `file` message.
+/// 
 /// Comparing against the last state means duplicate filesystem events don't trigger duplicate broadcasts. Returns the
 /// watcher, which the caller must keep alive.
 fn spawn_watcher(hv_dir: &Path, tx: broadcast::Sender<String>) -> impl Watcher {
@@ -208,7 +219,7 @@ fn spawn_watcher(hv_dir: &Path, tx: broadcast::Sender<String>) -> impl Watcher {
     .expect("create filesystem watcher");
 
     watcher
-        .watch(hv_dir, RecursiveMode::NonRecursive)
+        .watch(hv_dir, RecursiveMode::Recursive)
         .expect("watch hv directory");
 
     watcher

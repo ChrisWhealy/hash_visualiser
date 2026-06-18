@@ -15,6 +15,8 @@ const fileList = document.getElementById('file-list');
 
 let currentFile = null;
 let lastSource = null;
+let currentFiles = []; // most recent file list, so a folder toggle can re-render the tree
+const collapsedFolders = new Set(); // folder paths the user has collapsed
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 function render(source) {
@@ -41,38 +43,102 @@ function render(source) {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-async function selectFile(name) {
-  currentFile = name;
+// The URL for a file path: each segment is encoded but the slashes between subdirectories are kept.
+function fileUrl(path) {
+  return '/hv/' + path.split('/').map(encodeURIComponent).join('/');
+}
 
-  for (const li of fileList.children) {
-    li.classList.toggle('active', li.dataset.file === name);
+// Mark the list entry for the currently-selected file active (and the rest inactive).
+function highlightActive() {
+  for (const el of fileList.querySelectorAll('[data-file]')) {
+    el.classList.toggle('active', el.dataset.file === currentFile);
   }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+async function selectFile(path) {
+  currentFile = path;
+  highlightActive();
 
   lastSource = null; // force a fresh render even if the new file's bytes coincide with the old
 
   try {
-    const source = await fetch(`/hv/${encodeURIComponent(name)}`, { cache: 'no-store' }).then((r) => r.text());
+    const source = await fetch(fileUrl(path), { cache: 'no-store' }).then((r) => r.text());
     render(source);
   } catch (err) {
     banner.style.display = 'block';
-    banner.textContent = `Error loading ${name}: ${err}`;
+    banner.textContent = `Error loading ${path}: ${err}`;
     console.error(err);
   }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// Rebuild the sidebar from a list of file names, marking the currently-selected one active.
-function renderFileList(files) {
-  fileList.replaceChildren();
+// Group a flat list of relative paths (e.g. "binary_operations/01_add.hv") into a nested folder/file tree.
+function buildTree(paths) {
+  const root = { dirs: new Map(), files: [] };
 
-  for (const name of files) {
-    const li = document.createElement('li');
-    li.textContent = name;
-    li.dataset.file = name;
-    li.classList.toggle('active', name === currentFile);
-    li.addEventListener('click', () => selectFile(name));
-    fileList.appendChild(li);
+  for (const path of paths) {
+    const parts = path.split('/');
+    let node = root;
+    for (const dir of parts.slice(0, -1)) {
+      if (!node.dirs.has(dir)) node.dirs.set(dir, { dirs: new Map(), files: [] });
+      node = node.dirs.get(dir);
+    }
+    node.files.push(path);
   }
+
+  return root;
+}
+
+// Render a tree node into `container`: folders (collapsible) first, then files. Paths are pre-sorted, so the Map and
+// the file array are already in alphabetical order.
+function appendTree(node, prefix, container) {
+  for (const [dir, child] of node.dirs) {
+    const folderPath = prefix ? `${prefix}/${dir}` : dir;
+    const collapsed = collapsedFolders.has(folderPath);
+
+    const li = document.createElement('li');
+    li.className = 'folder';
+
+    const label = document.createElement('div');
+    label.className = 'folder-label';
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    caret.textContent = collapsed ? '▸' : '▾';
+    label.append(caret, document.createTextNode(dir));
+    label.addEventListener('click', () => {
+      if (collapsedFolders.has(folderPath)) collapsedFolders.delete(folderPath);
+      else collapsedFolders.add(folderPath);
+      renderFileList(currentFiles);
+    });
+    li.appendChild(label);
+
+    const childList = document.createElement('ul');
+    childList.className = 'tree';
+    childList.hidden = collapsed;
+    appendTree(child, folderPath, childList);
+    li.appendChild(childList);
+
+    container.appendChild(li);
+  }
+
+  for (const path of node.files) {
+    const li = document.createElement('li');
+    li.className = 'file';
+    li.textContent = path.split('/').pop();
+    li.dataset.file = path;
+    li.classList.toggle('active', path === currentFile);
+    li.addEventListener('click', () => selectFile(path));
+    container.appendChild(li);
+  }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Rebuild the sidebar tree from a flat list of file paths.
+function renderFileList(files) {
+  currentFiles = files;
+  fileList.replaceChildren();
+  appendTree(buildTree(files), '', fileList);
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

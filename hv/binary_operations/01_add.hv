@@ -39,3 +39,5 @@ layout: left_to_right
 
 wire a -> result
 wire b -> result
+
+// probe
