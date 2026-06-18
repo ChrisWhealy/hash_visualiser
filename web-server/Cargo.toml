@@ -13,3 +13,7 @@ notify = "8"
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
+
+# JSON for the file-list endpoint and the per-file live-reload messages.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

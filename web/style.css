@@ -19,6 +19,61 @@ body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Two-column shell: a fixed file-picker sidebar on the left, the existing page in the remaining space. */
+#layout {
+    display: flex;
+    align-items: stretch;
+    min-height: 100vh;
+}
+
+#sidebar {
+    flex: 0 0 15rem;
+    padding: 1.5rem 1rem;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+}
+
+#sidebar h2 {
+    margin: 0 0 0.75rem;
+    padding: 0 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+}
+
+#file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#file-list li {
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.9rem;
+    color: var(--ink);
+    cursor: pointer;
+    user-select: none;
+}
+
+#file-list li:hover {
+    background: rgba(109, 179, 242, 0.10);
+}
+
+#file-list li.active {
+    background: var(--accent);
+    color: var(--bg);
+}
+
+/* The content column owns the remaining width; min-width:0 lets a wide canvas scroll instead of stretching the layout. */
+#content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 #title {
     padding: 1.5rem 2rem 0.5rem;
     max-width: 70rem;

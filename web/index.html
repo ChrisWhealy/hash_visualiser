@@ -9,27 +9,38 @@
 </head>
 
 <body>
-    <header id="title">
-        <h1>hash-visualiser</h1>
-        <div id="error-banner"></div>
-    </header>
+    <div id="layout">
+        <!-- File picker: lists the .hv files in the hv/ directory (GET /api/files). Selecting one renders it in the
+             diagram. Populated by renderer.js. -->
+        <nav id="sidebar">
+            <h2>Files</h2>
+            <ul id="file-list"></ul>
+        </nav>
 
-    <main id="stage">
-        <!-- #diagram shrink-wraps to the diagram canvas, so the description panel and transport bar can match its
-             exact width. -->
-        <div id="diagram">
-            <!-- svg_dom::SvgRoot::create_in() appends a sized <svg> here -->
-            <div id="app" class="canvas"></div>
+        <div id="content">
+            <header id="title">
+                <h1>hash-visualiser</h1>
+                <div id="error-banner"></div>
+            </header>
 
-            <!-- Transport bar: svg_dom::SvgRoot::create_in("transport", ...) appends the step buttons here.
-                 Fills #diagram, so it lines up with the canvas above it. -->
-            <footer id="transport"></footer>
+            <main id="stage">
+                <!-- #diagram shrink-wraps to the diagram canvas, so the description panel and transport bar can match
+                     its exact width. -->
+                <div id="diagram">
+                    <!-- svg_dom::SvgRoot::create_in() appends a sized <svg> here -->
+                    <div id="app" class="canvas"></div>
 
-            <!-- Clicking a node with a `description` toggles its rendered markdown into this panel, which sits above
-                 the canvas. It's empty until a node is clicked and is hidden while empty (CSS :empty). -->
-            <aside id="description" class="docs"></aside>
+                    <!-- Transport bar: svg_dom::SvgRoot::create_in("transport", ...) appends the step buttons here.
+                         Fills #diagram, so it lines up with the canvas above it. -->
+                    <footer id="transport"></footer>
+
+                    <!-- Clicking a node with a `description` toggles its rendered markdown into this panel, which sits
+                         above the canvas. It's empty until a node is clicked and is hidden while empty (CSS :empty). -->
+                    <aside id="description" class="docs"></aside>
+                </div>
+            </main>
         </div>
-    </main>
+    </div>
 
     <script type="module" src="web/renderer.js"></script>
 </body>
