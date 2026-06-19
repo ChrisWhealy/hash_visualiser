@@ -106,6 +106,94 @@ fn should_apply_unary_not() -> Result<(), String> {
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #[test]
+fn should_compute_three_input_majority() -> Result<(), String> {
+    // hv/composition/02_majority.hv — a 3-input function (SHA-2's Maj) with a composed body.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn Maj(a: u64, b: u64, c: u64) -> u64 = (a and b) xor (a and c) xor (b and c)\n\
+            data A = 0xFF00FF00FF00FF00\n\
+            data B = 0xFFFF0000FFFF0000\n\
+            data C = 0xFFFFFFFF00000000\n\
+            node a : register { source: A }\n\
+            node b : register { source: B }\n\
+            node c : register { source: C }\n\
+            node result : operation { compute: Maj(a, b, c) }\n";
+
+    if value_of(src, "result") != Some(0xFFFF_FF00_FF00_0000) {
+        return Err(format!("majority wrong: {:?}", value_of(src, "result")));
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_expose_the_not_step_in_a_decomposed_choose() -> Result<(), String> {
+    // hv/composition/04_choose.hv — Ch decomposed, with `NOT e` as its own node.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn Not(a: u64) -> u64 = not a\n\
+            fn And(a: u64, b: u64) -> u64 = a and b\n\
+            fn Xor(a: u64, b: u64) -> u64 = a xor b\n\
+            data E = 0xFF00FF00FF00FF00\n\
+            data F = 0xFFFF0000FFFF0000\n\
+            data G = 0xFFFFFFFF00000000\n\
+            node e : register { source: E }\n\
+            node f : register { source: F }\n\
+            node g : register { source: G }\n\
+            node not_e : operation { compute: Not(e) }\n\
+            node ef : operation { compute: And(e, f) }\n\
+            node ng : operation { compute: And(not_e, g) }\n\
+            node result : operation { compute: Xor(ef, ng) }\n";
+
+    for (node, want) in [
+        ("not_e", 0x00FF_00FF_00FF_00FFu64),
+        ("ef", 0xFF00_0000_FF00_0000),
+        ("ng", 0x00FF_00FF_0000_0000),
+        ("result", 0xFFFF_00FF_FF00_0000),
+    ] {
+        if value_of(src, node) != Some(want) {
+            return Err(format!("{node} = {:?}, want {want:#018x}", value_of(src, node)));
+        }
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_expose_each_intermediate_in_a_decomposed_majority() -> Result<(), String> {
+    // hv/composition/03_majority_expanded.hv — Maj decomposed into per-step nodes; each must surface its own value.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn And(a: u64, b: u64) -> u64 = a and b\n\
+            fn Xor(a: u64, b: u64) -> u64 = a xor b\n\
+            data A = 0xFF00FF00FF00FF00\n\
+            data B = 0xFFFF0000FFFF0000\n\
+            data C = 0xFFFFFFFF00000000\n\
+            node a : register { source: A }\n\
+            node b : register { source: B }\n\
+            node c : register { source: C }\n\
+            node ab : operation { compute: And(a, b) }\n\
+            node ac : operation { compute: And(a, c) }\n\
+            node bc : operation { compute: And(b, c) }\n\
+            node ab_ac : operation { compute: Xor(ab, ac) }\n\
+            node result : operation { compute: Xor(ab_ac, bc) }\n";
+
+    for (node, want) in [
+        ("ab", 0xFF00_0000_FF00_0000u64),
+        ("ac", 0xFF00_FF00_0000_0000),
+        ("bc", 0xFFFF_0000_0000_0000),
+        ("ab_ac", 0x0000_FF00_FF00_0000),
+        ("result", 0xFFFF_FF00_FF00_0000),
+    ] {
+        if value_of(src, node) != Some(want) {
+            return Err(format!("{node} = {:?}, want {want:#018x}", value_of(src, node)));
+        }
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
 fn should_chain_one_operation_into_another() -> Result<(), String> {
     // hv/composition/01_and_then_xor.hv — the `result` node's `compute` references another *operation* node (`ab`),
     // so node_value must recurse through it.

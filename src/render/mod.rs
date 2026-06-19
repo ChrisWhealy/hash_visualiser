@@ -1,6 +1,7 @@
 mod eval;
 mod layout;
 pub(crate) mod rect;
+mod routing;
 
 use std::{cell::Cell, collections::HashMap, rc::Rc};
 use svg_dom::{
@@ -12,14 +13,13 @@ use crate::{
     ast::{
         ebnf_04::{FnDef, Type},
         ebnf_06::{NodeDecl, NodeKind, PropValue},
-        ebnf_07::{WireDecl, WireEndpoint},
+        ebnf_07::WireEndpoint,
+        ebnf_08::FlowDirection,
         ebnf_11::{BinOp, Expr},
     },
     graph::ValidatedGraph,
 };
-use layout::{
-    MARGIN, NODE_H, NODE_W, downstream, entry_point, exit_point, layout, layout_sized, upstream,
-};
+use layout::{MARGIN, NODE_H, NODE_W, layout, layout_sized};
 use rect::Rect;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -127,10 +127,16 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
 
     let placement = layout_sized(graph, &sizes);
 
+    // Per-node wire-attachment anchor on the cross axis (centre, extent). Register/constant value cells sit below a
+    // label band, so wires must attach to the cell — not the footprint's centre, which lands near the cell's top edge.
+    // Operation cards and plain boxes attach at their box centre.
+    let conn = connection_anchors(graph, &placement, &grids);
+
+    let routes = routing::route_all(graph, &placement, &conn);
     let mut wires = Vec::with_capacity(graph.wires.len());
-    for wire in &graph.wires {
-        if let Some(line) = render_wire(svg, graph, &placement, wire)? {
-            wires.push(line);
+    for (wire, route) in graph.wires.iter().zip(&routes) {
+        if let Some(points) = route {
+            wires.push(draw_wire(svg, points, wire.name.as_deref())?);
         }
     }
 
@@ -236,53 +242,23 @@ fn render_node(svg: &SvgRoot, decl: &NodeDecl, rect: Rect) -> Result<SvgNode, Er
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Builds a `<line>` between a wire's endpoints.
-/// Lines with no endpoints (`?`) are anchored one layer-gap beyond the concrete node from which it originates;
-/// A wire with both endpoints open is meaningless and therefore skipped (`Ok(None)`).
-fn render_wire(
-    svg: &SvgRoot,
-    graph: &ValidatedGraph,
-    placement: &HashMap<String, Rect>,
-    wire: &WireDecl,
-) -> Result<Option<SvgNode>, Error> {
-    let flow = &graph.flow;
-    let src = node_rect(placement, &wire.source);
-    let dst = node_rect(placement, &wire.target);
-
-    let (start_point, end_point) = match (src, dst) {
-        (Some(s), Some(d)) => (exit_point(s, flow), entry_point(d, flow)),
-        (Some(s), None) => {
-            let start = exit_point(s, flow);
-            (start, downstream(start, flow))
-        }
-        (None, Some(d)) => {
-            let end = entry_point(d, flow);
-            (upstream(end, flow), end)
-        }
-        (None, None) => return Ok(None),
-    };
-
-    let line = svg.line(start_point, end_point)?;
-    line.set_stroke(MEDIUM_GREY)?;
-    line.set_stroke_width(2.0)?;
-
-    if let Some(name) = &wire.name {
-        line.set_attr("data-wire", name)?;
+/// Draws a wire as an orthogonal polyline (an SVG `<path>`) from the points computed by [`routing::route_all`].
+fn draw_wire(svg: &SvgRoot, points: &[Point], name: Option<&str>) -> Result<SvgNode, Error> {
+    let mut d = String::with_capacity(points.len() * 12);
+    for (i, p) in points.iter().enumerate() {
+        d.push_str(if i == 0 { "M " } else { " L " });
+        d.push_str(&format!("{} {}", p.x, p.y));
     }
 
-    Ok(Some(line))
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Resolves a wire endpoint to its placed [`Rect`]; `None` for open endpoints or unplaced nodes.
-fn node_rect<'a>(
-    placement: &'a HashMap<String, Rect>,
-    endpoint: &WireEndpoint,
-) -> Option<&'a Rect> {
-    match endpoint {
-        WireEndpoint::Node(name) => placement.get(name),
-        WireEndpoint::Open => None,
+    let path = svg.path(&d)?;
+    path.set_fill("none")?;
+    path.set_stroke(MEDIUM_GREY)?;
+    path.set_stroke_width(2.0)?;
+    if let Some(name) = name {
+        path.set_attr("data-wire", name)?;
     }
+
+    Ok(path)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -741,6 +717,50 @@ fn grid_footprint(decl: &NodeDecl, spec: &GridSpec) -> Size {
     let pad = card_pad(decl);
     let base = grid_size(spec);
     Size::new(base.width + 2.0 * pad, base.height + 2.0 * pad)
+}
+
+/// Cross-axis wire-attachment anchor `(centre, extent)` for every node. A register/constant value cell sits below its
+/// label band, so wires anchor to the cells; operation cards and plain boxes anchor to the whole box centre.
+fn connection_anchors(
+    graph: &ValidatedGraph,
+    placement: &HashMap<String, Rect>,
+    grids: &HashMap<String, GridSpec>,
+) -> HashMap<String, (f64, f64)> {
+    let horizontal = matches!(
+        graph.flow,
+        FlowDirection::LeftToRight | FlowDirection::RightToLeft
+    );
+
+    placement
+        .iter()
+        .map(|(name, rect)| {
+            let decl = &graph.nodes[name];
+            let anchor = match grids.get(name) {
+                // Register/constant value cells: anchor to the cells, below the label band.
+                Some(spec) if !matches!(decl.kind, NodeKind::Operation) => {
+                    let pad = card_pad(decl);
+                    if horizontal {
+                        let top = rect.top_left.y + pad + spec.label_h;
+                        let h = spec.rows as f64 * spec.cell_h + (spec.rows as f64 - 1.0) * spec.cell_gap;
+                        (top + h / 2.0, h)
+                    } else {
+                        let left = rect.top_left.x + pad;
+                        let w = spec.cols as f64 * spec.cell_w + (spec.cols as f64 - 1.0) * spec.cell_gap;
+                        (left + w / 2.0, w)
+                    }
+                }
+                // Operation cards and plain boxes: anchor to the box centre.
+                _ => {
+                    if horizontal {
+                        (rect.top_left.y + rect.size.height / 2.0, rect.size.height)
+                    } else {
+                        (rect.top_left.x + rect.size.width / 2.0, rect.size.width)
+                    }
+                }
+            };
+            (name.clone(), anchor)
+        })
+        .collect()
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -37,7 +37,7 @@ node ab : operation {
     format: hex64,
     compute: And(a, b),
     description: """
-# Stage 1 — `a AND b`
+# Stage 1: `a AND b`
 
 Bitwise AND of the two inputs, keeping only the bits set in *both*.
 
@@ -51,7 +51,7 @@ node result : operation {
     format: hex64,
     compute: Xor(ab, c),
     description: """
-# Stage 2 — `(a AND b) XOR c`
+# Stage 2: `(a AND b) XOR c`
 
 XORs the intermediate value from stage 1 with `c`.
 

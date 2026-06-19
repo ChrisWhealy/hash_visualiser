@@ -1,0 +1,82 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Composition 04 — Choose (SHA-2's `Ch`)
+//
+// `Ch` ("choose") is the other non-linear function in the SHA-2 round, the partner to `Maj`. It is a bitwise
+// multiplexer: the first input `e` selects, bit by bit, between the other two — where `e` is 1 take the bit from `f`,
+// where `e` is 0 take the bit from `g`. This is the function that puts the unary `NOT` operation to work.
+//
+//     Ch(e, f, g) = (e AND f) XOR ((NOT e) AND g)
+//
+// It is shown decomposed (like the expanded majority) so the `NOT e` step is visible as its own node. Flowing top to
+// bottom: the inputs feed `NOT e`, `e AND f` and `(NOT e) AND g`, which then fold together through `XOR` into `Ch`.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+context { word_size: 64 }
+
+fn Not(a: u64) -> u64        = not a
+fn And(a: u64, b: u64) -> u64 = a and b
+fn Xor(a: u64, b: u64) -> u64 = a xor b
+
+data E = 0xFF00FF00FF00FF00
+data F = 0xFFFF0000FFFF0000
+data G = 0xFFFFFFFF00000000
+
+node e : register { label: "e", format: hex64, source: E }
+node f : register { label: "f", format: hex64, source: F }
+node g : register { label: "g", format: hex64, source: G }
+
+// The selector inverted: wherever `e` is 0, `NOT e` is 1, which is what gates `g` through.
+node not_e : operation {
+    symbol: "NOT e",
+    format: hex64,
+    compute: Not(e),
+    description: """
+# Invert the selector — `NOT e`
+
+`Ch` uses `e` to choose between `f` and `g`. The `e AND f` term passes `f` wherever `e` is 1; to pass `g` wherever `e`
+is 0 we first flip the selector with `NOT`, then AND with `g`. So `NOT e` is the mask that lets `g` through exactly
+where `f` was blocked.
+"""
+}
+
+// Where e is 1, take f.
+node ef : operation { symbol: "e AND f", format: hex64, compute: And(e, f) }
+
+// Where e is 0 (i.e. NOT e is 1), take g.
+node ng : operation { symbol: "(NOT e) AND g", format: hex64, compute: And(not_e, g) }
+
+node result : operation {
+    symbol: "Ch(e, f, g)",
+    format: hex64,
+    compute: Xor(ef, ng),
+    description: """
+# Choose — `Ch(e, f, g) = (e AND f) XOR ((NOT e) AND g)`
+
+A per-bit multiplexer: for each bit position the output takes `f`'s bit where `e` is 1, and `g`'s bit where `e` is 0.
+Because `e AND f` and `(NOT e) AND g` can never both be 1 at the same bit (one needs `e`=1, the other `e`=0), the final
+`XOR` simply merges the two halves — `OR` would give the same result.
+
+`Ch` and `Maj` are the two non-linear functions mixed into every SHA-2 compression round.
+
+```rust
+fn ch(e: u64, f: u64, g: u64) -> u64 {
+    (e & f) ^ (!e & g)
+}
+
+assert_eq!(
+    ch(0xFF00FF00FF00FF00, 0xFFFF0000FFFF0000, 0xFFFFFFFF00000000),
+    0xFFFF00FFFF000000,
+);
+```
+"""
+}
+
+layout: top_to_bottom
+
+wire e -> not_e
+wire e -> ef
+wire f -> ef
+wire not_e -> ng
+wire g     -> ng
+wire ef -> result
+wire ng -> result

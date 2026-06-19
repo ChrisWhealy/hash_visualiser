@@ -1,0 +1,58 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Composition 02 — Majority (SHA-2's `Maj`ority)
+//
+// `Maj` is a three-input function and is one of SHA-2's core functions: for every bit position it outputs the
+// *majority vote* of the three inputs.  In other words, set each bit in the output to `1` wherever at least two of bits
+// in `a`, `b` or `c` have a `1`.
+//
+// Three inputs converge on a single operation here, so this also shows the layout fanning three values into one point.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// SHA-256 uses 32-bit words and SHA-512 uses 64-bit; `Maj` itself is the same at any width. We use 64-bit words here.
+context { word_size: 64 }
+
+layout: top_to_bottom
+
+// Majority: a result bit is 1 when two or three of the input bits are 1. Built from AND and XOR.
+fn Maj(a: u64, b: u64, c: u64) -> u64 = (a and b) xor (a and c) xor (b and c)
+
+data A = 0xFF00FF00FF00FF00
+data B = 0xFFFF0000FFFF0000
+data C = 0xFFFFFFFF00000000
+
+node a : register { label: "a", format: hex64, source: A }
+node b : register { label: "b", format: hex64, source: B }
+node c : register { label: "c", format: hex64, source: C }
+
+node result : operation {
+    symbol: "Maj(a, b, c)",
+    format: hex64,
+    compute: Maj(a, b, c),
+    description: """
+# Majority — `Maj(a, b, c)`
+
+For each bit position, `Maj` takes the *majority vote* of the three inputs: the output bit is `1` when **at least two**
+of `a`, `b`, `c` are `1`, and `0` otherwise. It is one of the two non-linear mixing functions in the SHA-2 compression
+round (the other being `Ch`oose).
+
+The usual bitwise form needs no comparisons or counting — `AND` pairs every combination and `XOR` combines them.
+
+`XOR` works in place of `OR` here because, for any bit position, the number of the three `AND` terms that come out `1`
+is 0, 1, or 3 - never exactly 2 - so the parity (`XOR`) and the "any" (`OR`) always agree.
+
+```rust
+fn maj(a: u64, b: u64, c: u64) -> u64 {
+    (a & b) ^ (a & c) ^ (b & c)
+}
+
+assert_eq!(
+    maj(0xFF00FF00FF00FF00, 0xFFFF0000FFFF0000, 0xFFFFFFFF00000000),
+    0xFFFFFF00FF000000,
+);
+```
+"""
+}
+
+wire a -> result
+wire b -> result
+wire c -> result

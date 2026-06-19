@@ -1,0 +1,79 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Composition 03 — Majority, step by step
+//
+// The same Maj(a, b, c) as composition 02, but here the function is taken apart so every intermediate value is shown.
+// Instead of one box computing the whole thing, each pairwise `AND` and each combining `XOR` is its own node:
+//
+//     a, b ─▶ [ a AND b ] ─┐
+//     a, c ─▶ [ a AND c ] ─┴▶ [ (a&b) XOR (a&c) ] ─┐
+//     b, c ─▶ [ b AND c ] ───────────────────────── ┴▶ [ Maj ]
+//
+// Reading left to right you can watch the three pairwise ANDs form, then fold together through the XORs into the final
+// majority value. Compare it with composition 02, where the identical computation is hidden inside one operation node.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+context { word_size: 64 }
+
+fn And(a: u64, b: u64) -> u64 = a and b
+fn Xor(a: u64, b: u64) -> u64 = a xor b
+
+data A = 0xFF00FF00FF00FF00
+data B = 0xFFFF0000FFFF0000
+data C = 0xFFFFFFFF00000000
+
+node a : register { label: "a", format: hex64, source: A }
+node b : register { label: "b", format: hex64, source: B }
+node c : register { label: "c", format: hex64, source: C }
+
+// The three pairwise ANDs — every combination of two inputs.
+node ab : operation { symbol: "a AND b", format: hex64, compute: And(a, b) }
+node ac : operation { symbol: "a AND c", format: hex64, compute: And(a, c) }
+node bc : operation { symbol: "b AND c", format: hex64, compute: And(b, c) }
+
+// Fold the three ANDs together with XOR. (XOR stands in for OR here — see composition 02.)
+node ab_ac : operation {
+    symbol: "(a&b) XOR (a&c)",
+    format: hex64,
+    compute: Xor(ab, ac),
+    description: """
+# First fold — `(a AND b) XOR (a AND c)`
+
+Combines the first two pairwise ANDs. A bit is set here when exactly one of `a&b` / `a&c` is set — which, since both
+contain the `a&…` term, happens when `a` is set together with exactly one of `b`, `c`.
+"""
+}
+
+node result : operation {
+    symbol: "Maj(a, b, c)",
+    format: hex64,
+    compute: Xor(ab_ac, bc),
+    description: """
+# Majority, assembled — `((a&b) XOR (a&c)) XOR (b&c)`
+
+XORing in the last pairwise term completes the majority vote: the final value is `1` at exactly the bit positions where
+at least two of `a`, `b`, `c` are `1`. This is the same result composition 02 computes in a single `Maj(a, b, c)` node —
+here the three intermediate ANDs and the two XOR folds are laid bare.
+
+```rust
+let ab = a & b;
+let ac = a & c;
+let bc = b & c;
+assert_eq!((ab ^ ac) ^ bc, /* Maj */ 0xFFFFFF00FF000000);
+```
+"""
+}
+
+layout: top_to_bottom
+
+wire a -> ab
+wire b -> ab
+wire a -> ac
+wire c -> ac
+wire b -> bc
+wire c -> bc
+
+wire ab -> ab_ac
+wire ac -> ab_ac
+
+wire ab_ac -> result
+wire bc    -> result
