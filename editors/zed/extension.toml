@@ -12,4 +12,4 @@ repository = "https://github.com/ChrisWhealy/hash_visualiser"
 [grammars.hv]
 repository = "https://github.com/ChrisWhealy/hash_visualiser"
 path = "editors/tree-sitter-hv"
-rev = "REPLACE_WITH_COMMIT_SHA"
+rev = "986eaffe6c41f8a010374fc6fad7d95df5232862"

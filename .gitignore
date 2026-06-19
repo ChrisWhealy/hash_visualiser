@@ -1,4 +1,5 @@
 /target
 /.claude
 /.idea
+editors/zed/grammars/hv
 dsl_design_conversation.md
