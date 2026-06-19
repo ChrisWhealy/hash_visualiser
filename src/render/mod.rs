@@ -63,6 +63,10 @@ const DESC_ICON_INSET: f64 = 12.0;
 /// Padding (px) of an operation node's coloured card around its inner label + value cell, so the card fully frames it.
 const OP_CARD_PAD: f64 = 10.0;
 
+/// Corner radius (px) used to round each elbow in a wire instead of a sharp 90° turn.
+/// Clamped per-corner to half the shorter adjacent segment.
+const WIRE_CORNER_RADIUS: f64 = 5.0;
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Create live SVG handles for everything described in a `.hv` file.
 ///
@@ -244,11 +248,7 @@ fn render_node(svg: &SvgRoot, decl: &NodeDecl, rect: Rect) -> Result<SvgNode, Er
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Draws a wire as an orthogonal polyline (an SVG `<path>`) from the points computed by [`routing::route_all`].
 fn draw_wire(svg: &SvgRoot, points: &[Point], name: Option<&str>) -> Result<SvgNode, Error> {
-    let mut d = String::with_capacity(points.len() * 12);
-    for (i, p) in points.iter().enumerate() {
-        d.push_str(if i == 0 { "M " } else { " L " });
-        d.push_str(&format!("{} {}", p.x, p.y));
-    }
+    let d = wire_path_data(points, WIRE_CORNER_RADIUS);
 
     let path = svg.path(&d)?;
     path.set_fill("none")?;
@@ -259,6 +259,58 @@ fn draw_wire(svg: &SvgRoot, points: &[Point], name: Option<&str>) -> Result<SvgN
     }
 
     Ok(path)
+}
+
+/// Builds the SVG path data for an orthogonal polyline, rounding each interior corner with a quadratic curve of (up to)
+/// `radius` px. Each corner's radius is clamped to half the shorter adjacent segment, so short legs never overshoot.
+fn wire_path_data(points: &[Point], radius: f64) -> String {
+    let Some(first) = points.first() else {
+        return String::new();
+    };
+
+    let mut d = format!("M {} {}", first.x, first.y);
+    let n = points.len();
+
+    for i in 1..n.saturating_sub(1) {
+        let (prev, corner, next) = (points[i - 1], points[i], points[i + 1]);
+        let r = radius
+            .min(point_distance(prev, corner) / 2.0)
+            .min(point_distance(corner, next) / 2.0);
+
+        if r <= 0.0 {
+            d.push_str(&format!(" L {} {}", corner.x, corner.y));
+            continue;
+        }
+
+        // Cut the corner: line up to `r` before it, then curve through the corner to `r` past it.
+        let enter = point_toward(corner, prev, r);
+        let leave = point_toward(corner, next, r);
+        d.push_str(&format!(
+            " L {} {} Q {} {} {} {}",
+            enter.x, enter.y, corner.x, corner.y, leave.x, leave.y
+        ));
+    }
+
+    if n > 1 {
+        let last = points[n - 1];
+        d.push_str(&format!(" L {} {}", last.x, last.y));
+    }
+
+    d
+}
+
+fn point_distance(a: Point, b: Point) -> f64 {
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+}
+
+/// The point `r` px from `from` toward `to`.
+fn point_toward(from: Point, to: Point, r: f64) -> Point {
+    let len = point_distance(from, to);
+    if len == 0.0 {
+        from
+    } else {
+        Point::new(from.x + (to.x - from.x) / len * r, from.y + (to.y - from.y) / len * r)
+    }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
