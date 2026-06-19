@@ -38,9 +38,13 @@ const CHANNEL_STEP: f64 = 12.0;
 fn m(p: Point, horizontal: bool) -> f64 {
     if horizontal { p.x } else { p.y }
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 fn c(p: Point, horizontal: bool) -> f64 {
     if horizontal { p.y } else { p.x }
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 fn pt(main: f64, cross: f64, horizontal: bool) -> Point {
     if horizontal {
         Point::new(main, cross)
@@ -48,6 +52,8 @@ fn pt(main: f64, cross: f64, horizontal: bool) -> Point {
         Point::new(cross, main)
     }
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 fn cross_lo(r: &Rect, horizontal: bool) -> f64 {
     if horizontal { r.top_left.y } else { r.top_left.x }
 }
@@ -62,6 +68,7 @@ fn segment_hits_rect(a: Point, b: Point, r: &Rect) -> bool {
     x1 > rx0 && x0 < rx1 && y1 > ry0 && y0 < ry1
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// True if any segment of `points` passes through any rect in `obstacles`.
 fn route_hits_any(points: &[Point], obstacles: &[Rect]) -> bool {
     points
@@ -69,12 +76,30 @@ fn route_hits_any(points: &[Point], obstacles: &[Rect]) -> bool {
         .any(|seg| obstacles.iter().any(|r| segment_hits_rect(seg[0], seg[1], r)))
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// The node name behind a wire endpoint, or `None` for an open (`?`) endpoint.
 fn node_name(ep: &WireEndpoint) -> Option<&str> {
     match ep {
         WireEndpoint::Node(n) => Some(n.as_str()),
         WireEndpoint::Open => None,
     }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// The points of the simple elbow from `exit` to `entry`, turning in the gap at `channel_m`.
+fn simple_elbow(exit: Point, entry: Point, horizontal: bool, channel_m: f64) -> Vec<Point> {
+    vec![
+        exit,
+        pt(channel_m, c(exit, horizontal), horizontal),
+        pt(channel_m, c(entry, horizontal), horizontal),
+        entry,
+    ]
+}
+
+/// Whether the simple elbow would cross an obstacle — i.e. the wire will need to detour. Used both when routing and,
+/// up front, when ordering a node's ports (a detoured wire arrives from the lane side, not from its source's side).
+fn would_detour(exit: Point, entry: Point, horizontal: bool, channel_m: f64, obstacles: &[Rect]) -> bool {
+    route_hits_any(&simple_elbow(exit, entry, horizontal, channel_m), obstacles)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -88,14 +113,8 @@ fn route(
     lane_c: f64,
     obstacles: &[Rect],
 ) -> Vec<Point> {
-    let simple = vec![
-        exit,
-        pt(channel_m, c(exit, horizontal), horizontal),
-        pt(channel_m, c(entry, horizontal), horizontal),
-        entry,
-    ];
-    if !route_hits_any(&simple, obstacles) {
-        return simple;
+    if !would_detour(exit, entry, horizontal, channel_m, obstacles) {
+        return simple_elbow(exit, entry, horizontal, channel_m);
     }
 
     // The simple elbow would clip a node: detour over the lane. Step into the gap after the source, jog out to the
@@ -113,10 +132,119 @@ fn route(
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Computes an orthogonal polyline for every wire, aligned with `graph.wires`. `None` marks a wire with two open
-/// endpoints (nothing to draw). Open-ended wires keep a short straight stub.
+/// For each wire (by index), check whether its simple elbow would cross a node — i.e. does it need to detour.
+/// Computed with un-fanned, body-centred endpoints, purely to inform port ordering.
+fn detour_flags(
+    graph: &ValidatedGraph,
+    placement: &HashMap<String, Rect>,
+    conn: &HashMap<String, (f64, f64)>,
+    horizontal: bool,
+    flow: &FlowDirection,
+) -> HashMap<usize, bool> {
+    let centre = |name: &str| conn.get(name).map(|&(c, _)| c).unwrap_or(0.0);
+    let mut flags = HashMap::new();
+
+    for (i, w) in graph.wires.iter().enumerate() {
+        let (WireEndpoint::Node(s), WireEndpoint::Node(t)) = (&w.source, &w.target) else {
+            continue;
+        };
+        let (Some(sr), Some(tr)) = (placement.get(s), placement.get(t)) else {
+            continue;
+        };
+
+        let exit_m = m(exit_point(sr, flow), horizontal);
+        let entry_m = m(entry_point(tr, flow), horizontal);
+        let exit = pt(exit_m, centre(s), horizontal);
+        let entry = pt(entry_m, centre(t), horizontal);
+        let channel_m = entry_m - (entry_m - exit_m).signum() * LAYER_GAP * 0.5;
+
+        let obstacles: Vec<Rect> = placement
+            .iter()
+            .filter(|(n, _)| *n != s && *n != t)
+            .map(|(_, r)| *r)
+            .collect();
+
+        flags.insert(i, would_detour(exit, entry, horizontal, channel_m, &obstacles));
+    }
+
+    flags
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Assigns each wire a `(track, track_count)` within its channel - the gap before its target's row.
+/// A left-edge sweep packs legs onto as few tracks as possible: legs whose cross-spans overlap land on different
+/// tracks, clear legs share one (so a pair that can't collide stays on a single, aligned track).
+/// Track 0 is closest to the row; wires are processed left-to-right so a detoured leg (arriving from the lane, far on
+/// the low-cross side) takes it.
+fn assign_channel_tracks(
+    graph: &ValidatedGraph,
+    placement: &HashMap<String, Rect>,
+    exit_cross: &HashMap<usize, f64>,
+    entry_cross: &HashMap<usize, f64>,
+    detoured: &HashMap<usize, bool>,
+    cross_min: f64,
+    flow: &FlowDirection,
+) -> HashMap<usize, (usize, usize)> {
+    let horizontal = matches!(flow, FlowDirection::LeftToRight | FlowDirection::RightToLeft);
+    let lane_start = cross_min - LANE_CLEARANCE; // a detoured leg arrives from here (the lane), so it spans from the side
+    let leg = |i: usize| -> (f64, f64) {
+        let end = entry_cross[&i];
+        let start = if *detoured.get(&i).unwrap_or(&false) {
+            lane_start
+        } else {
+            exit_cross[&i]
+        };
+        (start.min(end), start.max(end))
+    };
+
+    // Group wires by channel: their target's entry edge along the main axis (identical for a whole row).
+    let mut channels: HashMap<i64, Vec<usize>> = HashMap::new();
+    for (i, w) in graph.wires.iter().enumerate() {
+        if let (WireEndpoint::Node(_), WireEndpoint::Node(t)) = (&w.source, &w.target)
+            && let Some(tr) = placement.get(t)
+        {
+            let entry_m = m(entry_point(tr, flow), horizontal);
+            channels.entry(entry_m.round() as i64).or_default().push(i);
+        }
+    }
+
+    let mut tracks: HashMap<usize, (usize, usize)> = HashMap::new();
+    for wires in channels.values() {
+        let mut order = wires.clone();
+        order.sort_by(|&a, &b| leg(a).0.total_cmp(&leg(b).0));
+
+        let mut track_ends: Vec<f64> = Vec::new(); // cross-end of the last leg placed on each track
+        let mut assigned: Vec<(usize, usize)> = Vec::with_capacity(order.len());
+        for &i in &order {
+            let (lo, hi) = leg(i);
+            let t = match track_ends.iter().position(|&end| end <= lo - 1.0) {
+                Some(t) => {
+                    track_ends[t] = hi;
+                    t
+                }
+                None => {
+                    track_ends.push(hi);
+                    track_ends.len() - 1
+                }
+            };
+            assigned.push((i, t));
+        }
+
+        let count = track_ends.len();
+        for (i, t) in assigned {
+            tracks.insert(i, (t, count));
+        }
+    }
+
+    tracks
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Computes an orthogonal polyline for every wire, aligned with `graph.wires`.
+/// `None` marks a wire with two open endpoints (nothing to draw).
+/// Open-ended wires keep a short straight stub.
 ///
-/// `conn` gives each node's wire-attachment anchor on the cross axis as `(centre, extent)` — the centre and span of the
+/// `conn` gives each node's wire-attachment anchor on the cross axis as `(centre, extent)` - the centre and span of the
 /// node's *visible body* (e.g. the value cell, below a register's label band), so wires meet the body rather than the
 /// full footprint.
 pub(super) fn route_all(
@@ -133,6 +261,11 @@ pub(super) fn route_all(
     };
     let cross_centre_of = |name: &str| conn.get(name).map(|&(centre, _)| centre).unwrap_or(0.0);
 
+    let cross_min = placement
+        .values()
+        .map(|r| cross_lo(r, horizontal))
+        .fold(f64::INFINITY, f64::min);
+
     // Group concrete (node→node) wires by their source and target, to fan their endpoints out along each node's edge.
     let mut outgoing: HashMap<&str, Vec<usize>> = HashMap::new();
     let mut incoming: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -142,24 +275,32 @@ pub(super) fn route_all(
             incoming.entry(t).or_default().push(i);
         }
     }
-    // Order each node's wires by the cross position of the opposite endpoint (fewer crossings).
+
+    // Decide up front which wires will need a detour (using un-fanned, centred endpoints), so a node's ports can be
+    // ordered with that in mind: a detoured wire arrives from the lane side, so its source position is misleading.
+    let detoured = detour_flags(graph, placement, conn, horizontal, flow);
+    let rank = |i: usize| if *detoured.get(&i).unwrap_or(&false) { 0u8 } else { 1u8 };
+
+    // Order each node's wires: detoured wires first (they enter from the lane side), then the rest by the cross
+    // position of their opposite endpoint — which keeps direct wires from crossing.
     for v in outgoing.values_mut() {
         v.sort_by(|&a, &b| {
-            let (na, nb) = (node_name(&graph.wires[a].target), node_name(&graph.wires[b].target));
-            cross_centre_of(na.unwrap_or("")).total_cmp(&cross_centre_of(nb.unwrap_or("")))
+            let ka = (rank(a), cross_centre_of(node_name(&graph.wires[a].target).unwrap_or("")));
+            let kb = (rank(b), cross_centre_of(node_name(&graph.wires[b].target).unwrap_or("")));
+            ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
         });
     }
     for v in incoming.values_mut() {
         v.sort_by(|&a, &b| {
-            let (na, nb) = (node_name(&graph.wires[a].source), node_name(&graph.wires[b].source));
-            cross_centre_of(na.unwrap_or("")).total_cmp(&cross_centre_of(nb.unwrap_or("")))
+            let ka = (rank(a), cross_centre_of(node_name(&graph.wires[a].source).unwrap_or("")));
+            let kb = (rank(b), cross_centre_of(node_name(&graph.wires[b].source).unwrap_or("")));
+            ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
         });
     }
 
-    // Assign each wire a fanned-out exit/entry cross position, and remember its slot among the target's inputs.
+    // Fan each wire's exit/entry to a distinct position along its source/target edge.
     let mut exit_cross: HashMap<usize, f64> = HashMap::new();
     let mut entry_cross: HashMap<usize, f64> = HashMap::new();
-    let mut in_slot: HashMap<usize, (usize, usize)> = HashMap::new();
     let fan = |lo: f64, size: f64, k: usize, n: usize| lo + (k as f64 + 1.0) / (n as f64 + 1.0) * size;
 
     for (name, wires) in &outgoing {
@@ -174,14 +315,13 @@ pub(super) fn route_all(
         let lo = centre - extent / 2.0;
         for (k, &i) in wires.iter().enumerate() {
             entry_cross.insert(i, fan(lo, extent, k, wires.len()));
-            in_slot.insert(i, (k, wires.len()));
         }
     }
 
-    let cross_min = placement
-        .values()
-        .map(|r| cross_lo(r, horizontal))
-        .fold(f64::INFINITY, f64::min);
+    // Assign each wire's horizontal leg to a track within its channel (the gap before its target row): legs that
+    // overlap get separate tracks, clear legs share one. Track 0 sits closest to the row.
+    let channel_track =
+        assign_channel_tracks(graph, placement, &exit_cross, &entry_cross, &detoured, cross_min, flow);
 
     let mut routes = Vec::with_capacity(graph.wires.len());
     let mut lane = 0usize;
@@ -194,13 +334,15 @@ pub(super) fn route_all(
                 let exit = pt(exit_m, exit_cross[&i], horizontal);
                 let entry = pt(entry_m, entry_cross[&i], horizontal);
 
-                let dir = (entry_m - exit_m).signum();
-                let (slot, count) = in_slot[&i];
-                let stagger = (slot as f64 - (count as f64 - 1.0) / 2.0) * CHANNEL_STEP;
-                let channel_m = entry_m - dir * LAYER_GAP * 0.5 + stagger;
-
                 let src = node_name(&w.source);
                 let dst = node_name(&w.target);
+
+                let dir = (entry_m - exit_m).signum();
+                // Track 0 turns closest to the row; higher tracks step back toward the source. A single-track channel
+                // gives stagger 0 (legs aligned). `dir` keeps "closest to the row" correct for every flow direction.
+                let (track, tracks) = channel_track[&i];
+                let stagger = dir * ((tracks as f64 - 1.0) / 2.0 - track as f64) * CHANNEL_STEP;
+                let channel_m = entry_m - dir * LAYER_GAP * 0.5 + stagger;
                 let obstacles: Vec<Rect> = placement
                     .iter()
                     .filter(|(n, _)| Some(n.as_str()) != src && Some(n.as_str()) != dst)
@@ -233,67 +375,4 @@ pub(super) fn route_all(
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use svg_dom::root::utils::Size;
-
-    fn orthogonal(points: &[Point]) -> bool {
-        points
-            .windows(2)
-            .all(|s| (s[0].x - s[1].x).abs() < 1e-9 || (s[0].y - s[1].y).abs() < 1e-9)
-    }
-
-    #[test]
-    fn should_route_a_short_hop_as_a_clean_elbow() -> Result<(), String> {
-        // Source right edge → target left edge, one gap apart, nothing in the way.
-        let exit = Point::new(160.0, 70.0);
-        let entry = Point::new(280.0, 130.0);
-        let points = route(exit, entry, true, 220.0, 0.0, &[]);
-
-        if points.len() != 4 {
-            return Err(format!("expected a 4-point elbow, got {points:?}"));
-        }
-        if !orthogonal(&points) {
-            return Err("elbow is not axis-aligned".into());
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn should_detour_around_an_intervening_node() -> Result<(), String> {
-        // A long edge whose straight elbow would cross a node sitting between the columns.
-        let exit = Point::new(160.0, 70.0);
-        let entry = Point::new(520.0, 210.0);
-        let obstacle = Rect::new(Point::new(300.0, 40.0), Size::new(120.0, 200.0));
-
-        // The simple elbow (turning near the target) must be detected as crossing it...
-        let simple = route(exit, entry, true, 460.0, 0.0, &[]);
-        if !route_hits_any(&simple, &[obstacle]) {
-            return Err("test setup wrong: simple elbow should cross the obstacle".into());
-        }
-
-        // ...and the routed wire must avoid it, over a lane above the band (cross = 0).
-        let points = route(exit, entry, true, 460.0, 0.0, &[obstacle]);
-        if !orthogonal(&points) {
-            return Err("detour is not axis-aligned".into());
-        }
-        if route_hits_any(&points, &[obstacle]) {
-            return Err(format!("detour still crosses the node: {points:?}"));
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn should_detect_only_interior_crossings() -> Result<(), String> {
-        let r = Rect::new(Point::new(100.0, 100.0), Size::new(50.0, 50.0));
-        // Through the middle: hit.
-        if !segment_hits_rect(Point::new(80.0, 125.0), Point::new(200.0, 125.0), &r) {
-            return Err("a segment through the interior should hit".into());
-        }
-        // Running along the top edge: not a hit.
-        if segment_hits_rect(Point::new(80.0, 100.0), Point::new(200.0, 100.0), &r) {
-            return Err("a segment along the edge should not hit".into());
-        }
-        Ok(())
-    }
-}
+mod unit_tests;
