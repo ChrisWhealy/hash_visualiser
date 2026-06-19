@@ -38,8 +38,8 @@ node ab_ac : operation {
     description: """
 # First fold — `(a AND b) XOR (a AND c)`
 
-Combines the first two pairwise ANDs. A bit is set here when exactly one of `a&b` / `a&c` is set — which, since both
-contain the `a&…` term, happens when `a` is set together with exactly one of `b`, `c`.
+Combines the first two pairwise ANDs. 
+A bit is set here when exactly one of `a & b` / `a & c` is set — which, since both contain the `a & <the_other_input>` term, happens when `a` is set together with exactly one of `b`, `c`.
 """
 }
 
@@ -50,14 +50,13 @@ node result : operation {
     description: """
 # Majority, assembled — `((a&b) XOR (a&c)) XOR (b&c)`
 
-XORing in the last pairwise term completes the majority vote: the final value is `1` at exactly the bit positions where
-at least two of `a`, `b`, `c` are `1`. This is the same result composition 02 computes in a single `Maj(a, b, c)` node —
-here the three intermediate ANDs and the two XOR folds are laid bare.
+`XOR`ing in the last pairwise term completes the majority vote: the final value is `1` at exactly the bit positions where at least two of `a`, `b`, `c` are `1`.
 
 ```rust
 let ab = a & b;
 let ac = a & c;
 let bc = b & c;
+
 assert_eq!((ab ^ ac) ^ bc, /* Maj */ 0xFFFFFF00FF000000);
 ```
 """

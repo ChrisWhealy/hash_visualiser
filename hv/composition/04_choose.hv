@@ -33,9 +33,13 @@ node not_e : operation {
     description: """
 # Invert the selector — `NOT e`
 
-`Ch` uses `e` to choose between `f` and `g`. The `e AND f` term passes `f` wherever `e` is 1; to pass `g` wherever `e`
-is 0 we first flip the selector with `NOT`, then AND with `g`. So `NOT e` is the mask that lets `g` through exactly
-where `f` was blocked.
+`Ch` uses the bits in `e` to select the corresponding bit either from `f` or `g`.
+
+The `e AND f` term passes `f` wherever `e` is 1
+
+To pass `g` wherever `e` is 0, we first flip the selector with `NOT`, then AND with `g`.
+
+So `NOT e` is the mask that lets `g` through exactly where `f` was blocked.
 """
 }
 

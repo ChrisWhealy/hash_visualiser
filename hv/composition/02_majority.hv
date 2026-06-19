@@ -31,14 +31,13 @@ node result : operation {
     description: """
 # Majority — `Maj(a, b, c)`
 
-For each bit position, `Maj` takes the *majority vote* of the three inputs: the output bit is `1` when **at least two**
-of `a`, `b`, `c` are `1`, and `0` otherwise. It is one of the two non-linear mixing functions in the SHA-2 compression
-round (the other being `Ch`oose).
+For each bit position, `Maj` takes the *majority vote* of the three inputs: the output bit is `1` when **at least two** of `a`, `b`, `c` are `1`, and `0` otherwise.
+It is one of the two non-linear mixing functions in the SHA-2 compression round (the other being `Ch`oose).
 
 The usual bitwise form needs no comparisons or counting — `AND` pairs every combination and `XOR` combines them.
 
-`XOR` works in place of `OR` here because, for any bit position, the number of the three `AND` terms that come out `1`
-is 0, 1, or 3 - never exactly 2 - so the parity (`XOR`) and the "any" (`OR`) always agree.
+`XOR` works in place of `OR` here because, for any bit position, the number of the three `AND` terms that come out `1` can only be 0, 1, or 3 and ***never*** exactly 2.
+So the parity (`XOR`) and the "any" (`OR`) always agree.
 
 ```rust
 fn maj(a: u64, b: u64, c: u64) -> u64 {
