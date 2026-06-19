@@ -1,0 +1,12 @@
+name = "HV"
+grammar = "hv"
+path_suffixes = ["hv"]
+line_comments = ["// "]
+autoclose_before = ",;:})]"
+
+brackets = [
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = true },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false },
+]

@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-hv",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Hash Visualiser (.hv) DSL",
+  "license": "MIT",
+  "main": "bindings/node",
+  "keywords": [
+    "tree-sitter",
+    "parser",
+    "hv",
+    "hash-visualiser"
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  }
+}

@@ -1,0 +1,15 @@
+id = "hv"
+name = "Hash Visualiser"
+description = "Syntax highlighting for the Hash Visualiser DSL (.hv files)."
+version = "0.1.0"
+schema_version = 1
+authors = ["Chris Whealy <chris@whealy.com>"]
+repository = "https://github.com/ChrisWhealy/hash_visualiser"
+
+# The Tree-sitter grammar lives in this same repository, under editors/tree-sitter-hv.
+# `rev` must be a commit SHA that contains that grammar (Zed fetches it at this exact commit).
+# After committing the grammar, replace the placeholder below with the commit hash.
+[grammars.hv]
+repository = "https://github.com/ChrisWhealy/hash_visualiser"
+path = "editors/tree-sitter-hv"
+rev = "REPLACE_WITH_COMMIT_SHA"
