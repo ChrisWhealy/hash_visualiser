@@ -784,11 +784,14 @@ fn expr_label(expr: &Expr, var: &str, value: usize) -> String {
             let inner: Vec<String> = args.iter().map(|a| expr_label(a, var, value)).collect();
             format!("{name}({})", inner.join(", "))
         }
-        Expr::BinOp { op, lhs, rhs } => format!(
-            "{} {op} {}",
-            expr_label(lhs, var, value),
-            expr_label(rhs, var, value)
-        ),
+        Expr::BinOp { op, lhs, rhs } => {
+            // Parenthesise binary operands so a nested expression reads unambiguously, e.g. `(x + 4) mod 5`.
+            let paren = |e: &Expr| {
+                let s = expr_label(e, var, value);
+                if matches!(e, Expr::BinOp { .. }) { format!("({s})") } else { s }
+            };
+            format!("{} {op} {}", paren(lhs), paren(rhs))
+        }
         Expr::Not(inner) => format!("not {}", expr_label(inner, var, value)),
         Expr::Array(elems) => {
             let inner: Vec<String> = elems.iter().map(|e| expr_label(e, var, value)).collect();
@@ -1248,15 +1251,15 @@ fn render_reduction(
     for c in 1..cols {
         // The next working element drops straight down into the box's top.
         let from = Point::new(col_x(c) + cell_w / 2.0, working_bottom);
-        wire(svg, &format!("M {} {} L {} {}", from.x, from.y, op_top(c).x, op_top(c).y))?;
+        wire(svg, &[from, op_top(c)])?;
 
         if c == 1 {
             // The first operand (working[0]) elbows into the left of the first box.
             let w0 = Point::new(col_x(0) + cell_w / 2.0, working_bottom);
-            wire(svg, &format!("M {} {} L {} {} L {} {}", w0.x, w0.y, w0.x, op_mid, op_left(1).x, op_mid))?;
+            wire(svg, &[w0, Point::new(w0.x, op_mid), op_left(1)])?;
         } else {
             // The running result flows horizontally from the previous box into this one's left.
-            wire(svg, &format!("M {} {} L {} {}", op_right(c - 1).x, op_mid, op_left(c).x, op_mid))?;
+            wire(svg, &[op_right(c - 1), op_left(c)])?;
         }
     }
 
@@ -1267,7 +1270,7 @@ fn render_reduction(
     if cols >= 2 {
         // The final fold box's output drops straight down into the result cell.
         let x_mid = col_x(last_col) + cell_w / 2.0;
-        wire(svg, &format!("M {} {} L {} {}", x_mid, op_y + cell_h, x_mid, result_y))?;
+        wire(svg, &[Point::new(x_mid, op_y + cell_h), Point::new(x_mid, result_y)])?;
     }
 
     // --- output-state row: c[x] for each outer row, all initially blank ---
@@ -1445,21 +1448,30 @@ fn render_map(
     let root = build_viz_tree(&map.body, &mut nodes, &mut next_leaf);
     let depth = nodes.iter().map(|n| n.row).max().unwrap_or(0);
 
+    // Each node is a labelled box: a label band (the read expression for a leaf, or the operator for an internal
+    // node) above a value cell. Internal nodes get the coloured operation card, matching the expanded-Maj tutorial.
+    let label_h = spec.label_h;
+    let node_h = label_h + cell_h;
+    let row_h = node_h + cell_h; // a clear band below each node for the connector wires
     let content_top = grid_bottom + cell_h;
-    let row_h = 2.0 * cell_h; // a clear band between rows for the connector wires
     let node_x = |col: f64| grid_origin.x + col * (cell_w + gap);
-    let node_y = |row: usize| content_top + row as f64 * row_h;
+    let node_top = |row: usize| content_top + row as f64 * row_h;
+    let value_top = |row: usize| node_top(row) + label_h;
+    let node_bottom = |row: usize| node_top(row) + node_h;
 
     // Connector wires (drawn first, behind the cells): each child elbows down into its parent's top.
     for node in &nodes {
         let px = node_x(node.col) + cell_w / 2.0;
-        let py_top = node_y(node.row);
+        let py = node_top(node.row);
         for &c in &node.children {
             let child = &nodes[c];
             let cx = node_x(child.col) + cell_w / 2.0;
-            let cy = node_y(child.row) + cell_h;
-            let mid = (cy + py_top) / 2.0;
-            wire(svg, &format!("M {cx} {cy} L {cx} {mid} L {px} {mid} L {px} {py_top}"))?;
+            let cy = node_bottom(child.row);
+            let mid = (cy + py) / 2.0;
+            wire(
+                svg,
+                &[Point::new(cx, cy), Point::new(cx, mid), Point::new(px, mid), Point::new(px, py)],
+            )?;
         }
     }
 
@@ -1480,28 +1492,50 @@ fn render_map(
         })
         .collect();
 
-    // Value cells, one per expression node, showing the initial x's values; op glyphs label the internal ones.
+    // Draw each node as a labelled box; the returned text node is updated as `x` steps.
     let mut node_texts: Vec<SvgNode> = Vec::with_capacity(nodes.len());
     for (i, node) in nodes.iter().enumerate() {
-        let pos = Point::new(node_x(node.col), node_y(node.row));
+        let top = Point::new(node_x(node.col), node_top(node.row));
+        let value_pos = Point::new(top.x, value_top(node.row));
         let content = node_values
             .first()
             .and_then(|vals| vals.get(i).copied().flatten())
             .map(|v| format_value(v, digits))
             .unwrap_or_default();
-        let (_, text) = draw_value_cell(svg, pos, Size::new(cell_w, cell_h), &content)?;
-        if let Some(label) = &node.op_label {
-            let lbl = svg.text(Point::new(pos.x + cell_w / 2.0, pos.y - cell_h * 0.4), label)?;
-            lbl.set_fill(HILITE_FILL)?;
-            lbl.set_attr("text-anchor", "middle")?;
-            lbl.set_attr("font-family", "sans-serif")?;
-            lbl.set_attr("font-size", "11")?;
+
+        // The label band: an operator glyph (internal node), or the read expression (array-read leaf).
+        let band_label = match &node.op_label {
+            Some(op) => Some(op.clone()),
+            None if node.read_index.is_some() => Some(expr_label(&node.expr, "", 0)),
+            None => None,
+        };
+
+        if node.op_label.is_some() {
+            // Coloured operation card framing the label band + value cell.
+            let card = svg.rect(top, Size::new(cell_w, node_h))?;
+            card.set_fill(fill_for(&NodeKind::Operation))?;
+            card.set_stroke("black")?;
+            card.set_stroke_width(1.5)?;
+            card.set_attr("rx", "6")?;
         }
+
+        if let Some(label) = &band_label {
+            let lbl = svg.text(Point::new(top.x + cell_w / 2.0, top.y + label_h * GRID_LABEL_BASELINE), label)?;
+            lbl.set_fill(PALE_BLUE_GREY)?;
+            lbl.set_attr("text-anchor", "middle")?;
+            lbl.set_attr("font-family", if node.op_label.is_some() { "sans-serif" } else { CELL_FONT_FAMILY })?;
+            lbl.set_attr("font-size", if node.op_label.is_some() { "12" } else { "11" })?;
+            if node.op_label.is_some() {
+                lbl.set_attr("font-weight", "600")?;
+            }
+        }
+
+        let (_, text) = draw_value_cell(svg, value_pos, Size::new(cell_w, cell_h), &content)?;
         node_texts.push(text);
     }
 
     // Output-state row: D[x] for each x, filling at column x as you step.
-    let output_y = node_y(depth) + row_h;
+    let output_y = node_top(depth) + row_h;
     let mut output_rects: Vec<SvgNode> = Vec::with_capacity(xs.len());
     let mut output_texts: Vec<SvgNode> = Vec::with_capacity(xs.len());
     for &x in &xs {
@@ -1596,9 +1630,9 @@ fn render_map(
     Ok((vec![back, fwd], Point::new(right, bottom)))
 }
 
-/// Draws a connector wire from an SVG path-data string (no fill, grey stroke).
-fn wire(svg: &SvgRoot, d: &str) -> Result<(), Error> {
-    let path = svg.path(d)?;
+/// Draws a connector wire through an orthogonal polyline (no fill, grey stroke), rounding each elbow.
+fn wire(svg: &SvgRoot, points: &[Point]) -> Result<(), Error> {
+    let path = svg.path(&wire_path_data(points, WIRE_CORNER_RADIUS))?;
     path.set_fill("none")?;
     path.set_stroke(MEDIUM_GREY)?;
     path.set_stroke_width(1.5)?;

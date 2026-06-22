@@ -16,6 +16,7 @@ pub const LAYER_GAP: f64 = 80.0;
 pub const NODE_GAP: f64 = 40.0;
 /// Padding between the diagram and the edge of the viewport.
 pub const MARGIN: f64 = 40.0;
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Uniform-box layout — every node is `NODE_W`×`NODE_H`. Used for sizing estimates ([`super::diagram_size`]) and as
 /// the default when actual node sizes are not yet known.

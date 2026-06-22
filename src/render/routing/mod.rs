@@ -69,10 +69,18 @@ fn cross_lo(r: &Rect, horizontal: bool) -> f64 {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// True if the axis-aligned segment `a`–`b` passes through the interior of `r` (touching an edge does not count).
 fn segment_hits_rect(a: Point, b: Point, r: &Rect) -> bool {
-    let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
-    let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
-    let (rx0, ry0) = (r.top_left.x, r.top_left.y);
-    let (rx1, ry1) = (rx0 + r.size.width, ry0 + r.size.height);
+    let (x0, x1, y0, y1) = (
+        a.x.min(b.x),
+        a.x.max(b.x),
+        a.y.min(b.y),
+        a.y.max(b.y),
+    );
+    let (rx0, ry0, rx1, ry1) = (
+        r.top_left.x,
+        r.top_left.y,
+        r.top_left.x + r.size.width,
+        r.top_left.y + r.size.height,
+    );
     x1 > rx0 && x0 < rx1 && y1 > ry0 && y0 < ry1
 }
 
@@ -104,9 +112,10 @@ fn simple_elbow(exit: Point, entry: Point, horizontal: bool, channel_m: f64) -> 
     ]
 }
 
-/// Whether the simple elbow would cross an obstacle — i.e. the wire will need to detour. Used both when routing and,
-/// up front, when ordering a node's ports (a detoured wire arrives from the lane side, not from its source's side).
-fn would_detour(exit: Point, entry: Point, horizontal: bool, channel_m: f64, obstacles: &[Rect]) -> bool {
+/// Whether the simple elbow crosses an obstacle — i.e. will the wire need to detour.
+/// Used both when routing and, up front, when ordering a node's ports (a detoured wire arrives from the lane side, not
+/// from its source's side).
+fn should_detour(exit: Point, entry: Point, horizontal: bool, channel_m: f64, obstacles: &[Rect]) -> bool {
     route_hits_any(&simple_elbow(exit, entry, horizontal, channel_m), obstacles)
 }
 
@@ -121,7 +130,7 @@ fn route(
     lane_c: f64,
     obstacles: &[Rect],
 ) -> Vec<Point> {
-    if !would_detour(exit, entry, horizontal, channel_m, obstacles) {
+    if !should_detour(exit, entry, horizontal, channel_m, obstacles) {
         return simple_elbow(exit, entry, horizontal, channel_m);
     }
 
@@ -172,7 +181,7 @@ fn detour_flags(
             .map(|(_, r)| *r)
             .collect();
 
-        flags.insert(i, would_detour(exit, entry, horizontal, channel_m, &obstacles));
+        flags.insert(i, should_detour(exit, entry, horizontal, channel_m, &obstacles));
     }
 
     flags
