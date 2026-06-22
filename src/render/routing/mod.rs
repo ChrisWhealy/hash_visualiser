@@ -1,8 +1,12 @@
 //! Orthogonal ("elbow") wire routing.
 //!
-//! Straight edge-centre-to-edge-centre lines have two problems once the layout has more than a trivial shape: long
-//! edges cut straight through the nodes between their endpoints, and several wires sharing a source or target overlap
-//! into one indistinguishable line. This module routes each wire as an axis-aligned polyline instead:
+//! Straight edge-centre-to-edge-centre lines are suitable only for the most basic of layouts.
+//! For more complex layouts (I.E. layouts that you would use in most real-life scenarios), there are two problems:
+//! 
+//! 1. Long edges are likely to cut straight through any nodes between their endpoints
+//! 1. Several wires sharing a source or target overlap into one indistinguishable line.
+//! 
+//! This module is designe to route each wire as an axis-aligned polyline instead:
 //!
 //! - **Fan-out**: a node's incoming/outgoing wires are spread along its edge (ordered by the opposite endpoint), so no
 //!   two share a line where they meet the node.
@@ -11,8 +15,12 @@
 //! - **Detour**: if that simple elbow would cross another node (a multi-layer "long" edge), the wire is rerouted out
 //!   to a lane beyond the node band, so it travels over the top/side and never passes through a node.
 //!
-//! Everything is expressed in (main, cross) terms — main = the flow axis, cross = perpendicular — so the same logic
-//! serves all four flow directions.
+//! Everything is expressed in (main, cross) terms:
+//! 
+//! * main = the flow axis
+//! * cross = perpendicular to the flow axis
+//! 
+//! So the same logic applies irrespective of the flow direction
 
 use std::collections::HashMap;
 
@@ -29,9 +37,9 @@ use super::layout::{LAYER_GAP, downstream, entry_point, exit_point, upstream};
 /// How far beyond the node band a detour ("flyover") lane sits.
 const LANE_CLEARANCE: f64 = 28.0;
 /// Cross-axis separation between stacked detour lanes.
-const LANE_STEP: f64 = 16.0;
+const LANE_STEP: f64 = 20.0;
 /// Main-axis stagger between vertical channels that share an inter-layer gap, so they don't become collinear.
-const CHANNEL_STEP: f64 = 12.0;
+const CHANNEL_STEP: f64 = 18.0;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // (main, cross) helpers — main is the flow axis, cross is perpendicular.

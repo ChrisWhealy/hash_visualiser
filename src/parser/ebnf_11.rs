@@ -107,7 +107,7 @@ impl Parser {
     }
 
     fn parse_rot(&mut self) -> Result<Expr, ParseError> {
-        let mut lhs = self.parse_unary()?;
+        let mut lhs = self.parse_mod()?;
 
         loop {
             let op = match self.peek_nth(0) {
@@ -118,9 +118,27 @@ impl Parser {
                 _ => break,
             };
             self.advance();
-            let rhs = self.parse_unary()?;
+            let rhs = self.parse_mod()?;
             lhs = Expr::BinOp {
                 op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+
+        Ok(lhs)
+    }
+
+    // `mod` binds tighter than the rotates/shifts/arithmetic above it (Rust-like multiplicative precedence), so a bare
+    // `x + 1 mod 5` is `x + (1 mod 5)`. Index expressions such as `c[(x + 4) mod 5]` use explicit parentheses anyway.
+    fn parse_mod(&mut self) -> Result<Expr, ParseError> {
+        let mut lhs = self.parse_unary()?;
+
+        while self.peek_nth(0) == Some(&Token::Mod) {
+            self.advance();
+            let rhs = self.parse_unary()?;
+            lhs = Expr::BinOp {
+                op: BinOp::Mod,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             };

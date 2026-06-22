@@ -1,0 +1,69 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// SHA-3 (Keccak) — Theta, part D
+//
+// Theta is the first of Keccak's five step functions; it diffuses every lane using the parity of neighbouring columns.
+// It comes in two parts:
+//
+//   C[x] = A[x,0] XOR A[x,1] XOR A[x,2] XOR A[x,3] XOR A[x,4]   — column parity (see the ThetaC demo in sha3.hv)
+//   D[x] = C[x-1] XOR rotl(C[x+1], 1)                           — this file
+//
+// and each lane is then mixed:  A'[x,y] = A[x,y] XOR D[x].
+//
+// ThetaD is a *map*: it takes the 5-element column-parity vector C and produces a 5-element vector D, computing each
+// D[x] from the two neighbouring parities. The column indices wrap modulo 5, which is why the map uses `mod`.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+context { word_size: 64 }
+
+layout: left_to_right
+
+// For every column x, combine the parity of the previous row, `C[(x-1) mod 5]` ≡ `C[(x+4) mod 5]`, with the
+// parity of the next row rotated left by one bit, `rotl(C[(x+1) mod 5], 1)`.
+fn ThetaD(c: [u64; 5]) -> [u64; 5] = [ for x in 0..5 => c[(x + 4) mod 5] xor (c[(x + 1) mod 5] rotl_u 1) ]
+
+// The five column parities. In the full algorithm these come from ThetaC; here they are given directly.
+data Parities = [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0xff03eebc05f6ec7d, 0xa9b4a502d1e9e12b ]
+
+node c : register {
+    label: "Input parities (c)",
+    format: hex64,
+    source: Parities,
+    description: """
+Input parities
+
+```
+C = [ 0x0000000000000000,
+      0x0000000000000000,
+      0x0000000000000000,
+      0xff03eebc05f6ec7d,
+      0xa9b4a502d1e9e12b ]    
+```
+""",
+}
+
+node d : operation {
+    symbol: "D = ThetaD(C)",
+    format: hex64,
+    compute: ThetaD(c),
+    description: """
+# Theta D — `D[x] = C[x-1] XOR rotl(C[x+1], 1)`
+
+`ThetaD` maps the 5-element column-parity vector `C` to a 5-element vector `D`.
+
+For each column it blends the parity of the column to the **left** with the **bit-rotated** parity of the column to
+the **right**:
+
+- the neighbours are picked with wrap-around — `C[(x+4) mod 5]` and `C[(x+1) mod 5]` — so column 0's left neighbour is
+  column 4, and column 4's right neighbour is column 0;
+- the right neighbour is rotated left by a single bit before mixing. That one-bit rotation is the only "twist" in
+  Theta and is what spreads change *upward* across bit positions, not just sideways across columns.
+
+```rust
+fn theta_d(c: &[u64; 5]) -> [u64; 5] {
+    std::array::from_fn(|x| c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1))
+}
+```
+"""
+}
+
+wire c -> d

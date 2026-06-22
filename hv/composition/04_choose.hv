@@ -17,30 +17,22 @@ fn Not(a: u64) -> u64        = not a
 fn And(a: u64, b: u64) -> u64 = a and b
 fn Xor(a: u64, b: u64) -> u64 = a xor b
 
-data E = 0xFF00FF00FF00FF00
-data F = 0xFFFF0000FFFF0000
-data G = 0xFFFFFFFF00000000
+// data InputValue = 0xFF00FF00FF00FF00
+// data F = 0xFFFF0000FFFF0000
+// data G = 0xFFFFFFFF00000000
+data InputValue = 0xFF00FF00FF00FF00
+data F = 0x6060606060606060
+data G = 0x0505050505050505
 
-node e : register { label: "e", format: hex64, source: E }
-node f : register { label: "f", format: hex64, source: F }
-node g : register { label: "g", format: hex64, source: G }
+node e : register { label: "Input selector (e)", format: hex64, source: InputValue }
+node f : register { label: "Choose if 1 (f)", format: hex64, source: F }
+node g : register { label: "Choose if 0 (g)", format: hex64, source: G }
 
 // The selector inverted: wherever `e` is 0, `NOT e` is 1, which is what gates `g` through.
 node not_e : operation {
     symbol: "NOT e",
     format: hex64,
-    compute: Not(e),
-    description: """
-# Invert the selector — `NOT e`
-
-`Ch` uses the bits in `e` to select the corresponding bit either from `f` or `g`.
-
-The `e AND f` term passes `f` wherever `e` is 1
-
-To pass `g` wherever `e` is 0, we first flip the selector with `NOT`, then AND with `g`.
-
-So `NOT e` is the mask that lets `g` through exactly where `f` was blocked.
-"""
+    compute: Not(e)
 }
 
 // Where e is 1, take f.
@@ -56,11 +48,8 @@ node result : operation {
     description: """
 # Choose — `Ch(e, f, g) = (e AND f) XOR ((NOT e) AND g)`
 
-A per-bit multiplexer: for each bit position the output takes `f`'s bit where `e` is 1, and `g`'s bit where `e` is 0.
-Because `e AND f` and `(NOT e) AND g` can never both be 1 at the same bit (one needs `e`=1, the other `e`=0), the final
-`XOR` simply merges the two halves — `OR` would give the same result.
-
-`Ch` and `Maj` are the two non-linear functions mixed into every SHA-2 compression round.
+`Choose` functions as per-bit multiplexer.
+That is, the input value acts as a selector mask: if the current bit in the input value `e` is `1`, then choose the corresponding bit from `f`, else choose the corresponding bit from `g`.
 
 ```rust
 fn ch(e: u64, f: u64, g: u64) -> u64 {

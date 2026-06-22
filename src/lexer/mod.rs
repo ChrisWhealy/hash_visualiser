@@ -325,6 +325,7 @@ fn keyword_or_ident(s: &str) -> Token {
         "layout" => Token::Layout,
         "left_to_right" => Token::LeftToRight,
         "let" => Token::Let,
+        "mod" => Token::Mod,
         "node" => Token::Node,
         "not" => Token::Not,
         "on" => Token::On,

@@ -78,6 +78,7 @@ LINE_COMMENT ::= "//" { char_except_newline } newline ;
    layout
    left_to_right
    let
+   mod
    node
    not
    on
@@ -449,6 +450,7 @@ reroute_effect ::= "reroute" IDENT ( "to" | "from" ) IDENT ;
    ================================================================================================================== *)
 
 add_op      ::= "+" | "-" ;
+mod_op      ::= "mod" ;
 shift_op    ::= "shl" | "shr_u" | "shr_s" ;
 rot_op      ::= "rotr_u" | "rotr_s" | "rotl_u" | "rotl_s" ;
 reduce_op   ::= "or" | "xor" | "and" | "+" ;   (* associative operators only *)
@@ -460,7 +462,8 @@ xor_expr    ::= and_expr   { "xor"    and_expr   } ;
 and_expr    ::= add_expr   { "and"    add_expr   } ;
 add_expr    ::= shift_expr { add_op   shift_expr } ;
 shift_expr  ::= rot_expr   { shift_op rot_expr   } ;
-rot_expr    ::= unary_expr { rot_op   unary_expr } ;
+mod_expr    ::= unary_expr { mod_op   unary_expr } ;
+rot_expr    ::= mod_expr   { rot_op   mod_expr   } ;
 
 unary_expr  ::= "not" unary_expr
              |  postfix_expr ;

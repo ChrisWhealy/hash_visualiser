@@ -37,6 +37,7 @@ pub enum Token {
     Or,
     Over,
     Pinned,
+    Mod,
     Reduce,
     Register,
     Reroute,
@@ -66,15 +67,15 @@ pub enum Token {
     Duration(u64, DurationUnit),
 
     // Punctuation
-    Arrow,    // ->
-    FatArrow, // =>
-    DotDot,   // ..
-    Colon,    // :
-    Equals,   // =
-    LBrace,   // {
-    RBrace,   // }
-    LParen,   // (
-    RParen,   // )
+    Arrow,     // ->
+    FatArrow,  // =>
+    DotDot,    // ..
+    Colon,     // :
+    Equals,    // =
+    LBrace,    // {
+    RBrace,    // }
+    LParen,    // (
+    RParen,    // )
     LBracket,  // [
     RBracket,  // ]
     Comma,     // ,

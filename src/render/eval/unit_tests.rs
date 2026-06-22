@@ -7,6 +7,61 @@ fn value_of(src: &str, node: &str) -> Option<u64> {
     node_value(graph.nodes.get(node).expect("node exists"), &graph)
 }
 
+fn array_of(src: &str, node: &str) -> Option<Vec<u64>> {
+    let program = parse(src).expect("parse");
+    let graph = build(&program).expect("build");
+    node_array(graph.nodes.get(node).expect("node exists"), &graph)
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_map_a_comprehension_over_an_array_with_mod_indexing() -> Result<(), String> {
+    // hv/sha3/theta_d.hv — D[x] = C[(x-1) mod 5] xor rotl(C[(x+1) mod 5], 1), as an array map.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn ThetaD(a: [u64; 5]) -> [u64; 5] = [ for x in 0..5 => a[(x + 4) mod 5] xor (a[(x + 1) mod 5] rotl_u 1) ]\n\
+            data InputData = [ 0x0, 0x0, 0x0, 0xff03eebc05f6ec7d, 0xa9b4a502d1e9e12b ]\n\
+            node c : register  { source: InputData }\n\
+            node d : operation { compute: ThetaD(c) }\n";
+
+    let c = [0u64, 0, 0, 0xff03_eebc_05f6_ec7d, 0xa9b4_a502_d1e9_e12b];
+    let want: Vec<u64> = (0..5).map(|x| c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1)).collect();
+
+    // The input data surfaces as a 5-element array...
+    if array_of(src, "c").as_deref() != Some(&c[..]) {
+        return Err(format!("input array wrong: {:?}", array_of(src, "c")));
+    }
+    // ...and the mapped output matches the reference computation.
+    if array_of(src, "d").as_deref() != Some(want.as_slice()) {
+        return Err(format!("ThetaD wrong: got {:?}, want {want:?}", array_of(src, "d")));
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_compute_sha3_theta_d_building_block() -> Result<(), String> {
+    // hv/sha3/theta_d.hv — D[x] = C[x-1] XOR rotl(C[x+1], 1), decomposed into a rotate then an XOR.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn RotL1(v: u64) -> u64 = v rotl_u 1\n\
+            fn Xor(a: u64, b: u64) -> u64 = a xor b\n\
+            data Cprev = 0x0123456789ABCDEF\n\
+            data Cnext = 0xFEDCBA9876543210\n\
+            node c_prev : register { source: Cprev }\n\
+            node c_next : register { source: Cnext }\n\
+            node rot    : operation { compute: RotL1(c_next) }\n\
+            node result : operation { compute: Xor(c_prev, rot) }\n";
+
+    if value_of(src, "rot") != Some(0xFDB9_7530_ECA8_6421) {
+        return Err(format!("rotl wrong: {:?}", value_of(src, "rot")));
+    }
+    if value_of(src, "result") != Some(0xFC9A_3057_6503_A9CE) {
+        return Err(format!("D[x] wrong: {:?}", value_of(src, "result")));
+    }
+    Ok(())
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #[test]
 fn should_apply_logical_shift_within_the_word() -> Result<(), String> {
