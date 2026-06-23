@@ -18,6 +18,8 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 context { word_size: 64 }
 
+layout: left_to_right
+
 fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
 
 data InputData = [
@@ -31,6 +33,7 @@ data InputData = [
 node state : register  { label: "State", format: hex64, source: InputData }
 node c     : operation {
     symbol: "ThetaC",
+    format: hex64,
     compute: ThetaC(state),
     description: """
 # Theta-C
@@ -48,7 +51,5 @@ fn theta_c(state: &[[u64; 5]; 5]) -> [u64; 5] {
 ```
 """
 }
-
-layout: left_to_right
 
 wire state -> c

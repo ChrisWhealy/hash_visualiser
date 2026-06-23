@@ -48,9 +48,9 @@ fn should_render_the_nested_map_operation_as_a_plain_box() -> Result<(), String>
         return Err("the nested-map operation should not draw its own value grid".into());
     }
 
-    // The inputs still render as grids: the 5x5 state and the 1x5 broadcast vector.
+    // The inputs still render as grids: the 5x5 state matrix and the broadcast vector as a 5x1 column.
     let state = grid_spec("state", &g.nodes["state"], &g, 7.5).ok_or("state grid")?;
     eq((state.rows, state.cols), (5usize, 5usize))?;
     let dvec = grid_spec("dvec", &g.nodes["dvec"], &g, 7.5).ok_or("dvec grid")?;
-    eq((dvec.rows, dvec.cols), (1usize, 5usize))
+    eq((dvec.rows, dvec.cols), (5usize, 1usize))
 }

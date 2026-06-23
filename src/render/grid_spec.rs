@@ -42,11 +42,12 @@ pub(crate) fn grid_spec(
     }
 
     // Prefer a 2D-array `source` (a grid of values); then a 1-D array (a `[u64; N]` data source or a comprehension
-    // result) shown as a single row; then a single scalar value shown in a 1×1 cell. So "before"/"after" values are
-    // visualised whether they're a word, a vector, or a matrix.
+    // result) shown as a single COLUMN — one value per row — so a vector of wide (e.g. hex64) values stays narrow
+    // rather than forcing the diagram off-screen horizontally; then a single scalar value shown in a 1×1 cell. So
+    // "before"/"after" values are visualised whether they're a word, a vector, or a matrix.
     let values = node_data_matrix(decl, graph)
         .or_else(|| eval::node_matrix(decl, graph))
-        .or_else(|| eval::node_array(decl, graph).map(|row| vec![row]))
+        .or_else(|| eval::node_array(decl, graph).map(|col| col.into_iter().map(|v| vec![v]).collect()))
         .or_else(|| eval::node_value(decl, graph).map(|v| vec![vec![v]]));
     let (rows, cols) = match &values {
         Some(rows) if !rows.is_empty() => (rows.len(), rows[0].len()),

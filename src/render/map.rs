@@ -166,7 +166,8 @@ pub(super) fn render_map(
     let digits = spec.digits;
     let range = map.range;
     let start = range.0;
-    let input_values: Vec<u64> = matrix.first().cloned().unwrap_or_default();
+    // The input is a 1-D vector; flatten so it reads the same whether the grid is laid out as a row or a column.
+    let input_values: Vec<u64> = matrix.iter().flatten().copied().collect();
 
     // Build and place the body's expression tree.
     let mut nodes: Vec<VizNode> = Vec::new();
@@ -307,8 +308,9 @@ pub(super) fn render_map(
         output_texts.push(text);
     }
 
-    // Shared navigation: forward/init fills D[x]; back blanks the cell just left.
-    let input_row: Vec<SvgNode> = input_cells.into_iter().next().unwrap_or_default();
+    // Shared navigation: forward/init fills D[x]; back blanks the cell just left. The input is a 1-D vector; flatten
+    // its cells so read-index highlighting works whether the grid is laid out as a row or a column.
+    let input_row: Vec<SvgNode> = input_cells.into_iter().flatten().collect();
     let current = Cell::new(start);
 
     let go: Rc<dyn Fn(StepAction)> = Rc::new(move |action: StepAction| {
@@ -584,6 +586,8 @@ pub(super) fn render_nested_map(
     // --- shared navigation: forward writes output row x; back blanks the row just left ---
     let matrix = matrix.to_vec();
     let (matrix_param, vec_param) = (info.matrix_param.clone(), info.vec_param.clone());
+    // The broadcast vector is a 1-D grid; flatten its cells so d[x] highlighting works whether it's a row or a column.
+    let vec_row: Vec<SvgNode> = vec_cells.into_iter().flatten().flatten().collect();
     let current = Cell::new(start);
 
     let go: Rc<dyn Fn(StepAction)> = Rc::new(move |action: StepAction| {
@@ -596,11 +600,9 @@ pub(super) fn render_nested_map(
         current.set(x);
 
         highlight_row(&input_cells[..], x);
-        // Highlight the selected element d[x] in the original broadcast-vector grid (a 1×N row).
-        if let Some(row) = vec_cells.as_ref().and_then(|c| c.first()) {
-            for (i, cell) in row.iter().enumerate() {
-                let _ = cell.set_fill(if i == x { HILITE_FILL } else { CELL_FILL });
-            }
+        // Highlight the selected element d[x] in the original broadcast-vector grid.
+        for (i, cell) in vec_row.iter().enumerate() {
+            let _ = cell.set_fill(if i == x { HILITE_FILL } else { CELL_FILL });
         }
 
         if let Some(row) = matrix.get(x) {
