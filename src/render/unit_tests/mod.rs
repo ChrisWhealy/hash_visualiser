@@ -11,7 +11,8 @@ use crate::{
     graph::{ValidatedGraph, build},
     render::{
         cell_width, description_html, format_value, grid_size, grid_spec, inferred_grid_shape,
-        is_map_operation, nested_map, placeholder_value, step_back, step_forward, step_range,
+        is_map_operation, nested_map, node_box_width, placeholder_value, step_back, step_forward,
+        step_range,
     },
 };
 

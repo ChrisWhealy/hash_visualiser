@@ -159,3 +159,22 @@ fn should_place_every_declared_node() -> Result<(), String> {
         "expected isolated node 'c' to be placed",
     )
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Node box width: a plain node keeps the default width unless its label is too long to fit, in which case the box
+// grows to the label plus side padding.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_keep_default_box_width_for_a_short_label() -> Result<(), String> {
+    // A label that comfortably fits the default box leaves the width unchanged.
+    eq(super::node_box_width(40.0), NODE_W)
+}
+
+#[test]
+fn should_widen_box_for_a_long_label() -> Result<(), String> {
+    // A label wider than the default box widens it to the text plus padding on each side.
+    let text_w = 202.0; // e.g. the ~27-char ThetaXor symbol "A'[x][y] = A[x][y] XOR D[x]"
+    let width = super::node_box_width(text_w);
+    check(width > NODE_W, "a long label should widen the box beyond the default")?;
+    check(width >= text_w, "the widened box must be at least as wide as its label")
+}

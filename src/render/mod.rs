@@ -47,6 +47,12 @@ const FALLBACK_CH: f64 = 7.5; // used only if the browser cannot measure (e.g. t
 const CELL_FONT_FAMILY: &str = "ui-monospace, monospace";
 const CELL_FONT_SIZE: &str = "12";
 
+/// Font for a plain node's centred label (e.g. an operation's `symbol`).
+const NODE_LABEL_FONT_FAMILY: &str = "sans-serif";
+const NODE_LABEL_FONT_SIZE: &str = "14";
+/// Horizontal padding kept on each side of a node's label inside its box, so the text never touches the border.
+const NODE_LABEL_PAD: f64 = 14.0;
+
 const CELL_FILL: &str = "#e6ecf5";
 const CELL_TEXT: &str = "#0f1420";
 const CELL_STROKE: &str = "#2a3650";
@@ -124,7 +130,7 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
             let size = grids
                 .get(name)
                 .map(|spec| grid_footprint(decl, spec))
-                .unwrap_or_else(|| Size::new(NODE_W, NODE_H));
+                .unwrap_or_else(|| node_box_size(svg, decl));
             (name.clone(), size)
         })
         .collect();
@@ -274,8 +280,8 @@ fn render_node(svg: &SvgRoot, decl: &NodeDecl, rect: Rect) -> Result<SvgNode, Er
     label.set_fill("white")?;
     label.set_attr("text-anchor", "middle")?;
     label.set_attr("dominant-baseline", "central")?;
-    label.set_attr("font-family", "sans-serif")?;
-    label.set_attr("font-size", "14")?;
+    label.set_attr("font-family", NODE_LABEL_FONT_FAMILY)?;
+    label.set_attr("font-size", NODE_LABEL_FONT_SIZE)?;
 
     group.append(&box_)?;
     group.append(&label)?;
@@ -918,6 +924,42 @@ fn measure_char(svg: &SvgRoot) -> f64 {
     // The probe has served its purpose, so make sure it remains hidden
     let _ = probe.set_attr("visibility", "hidden");
     ch
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Measures the rendered width (user units) of `text` at the given font, via a hidden probe text node — the same
+/// technique as [`measure_char`], but for a full string (so a node box can be widened to fit its label).
+///
+/// Falls back to a per-character estimate from [`FALLBACK_CH`] when the browser cannot measure (e.g. off the wasm
+/// target, or before layout), so non-browser callers still get a sensible width.
+fn measure_text(svg: &SvgRoot, text: &str, font_family: &str, font_size: &str) -> f64 {
+    let estimate = FALLBACK_CH * text.chars().count() as f64;
+    let Ok(probe) = svg.text(Point::origin(), text) else {
+        return estimate;
+    };
+    let _ = probe.set_attr("font-family", font_family);
+    let _ = probe.set_attr("font-size", font_size);
+
+    let width = probe.computed_text_length().filter(|w| *w > 0.0).unwrap_or(estimate);
+
+    // The probe has served its purpose; keep it hidden.
+    let _ = probe.set_attr("visibility", "hidden");
+    width
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// The box width needed to hold a centred label of rendered width `text_w`: the default [`NODE_W`], or the label plus
+/// [`NODE_LABEL_PAD`] clearance on each side when that is wider.
+fn node_box_width(text_w: f64) -> f64 {
+    (text_w + 2.0 * NODE_LABEL_PAD).max(NODE_W)
+}
+
+/// The footprint a plain (non-grid) node reserves: the default box, widened if its centred label is longer than the
+/// box can hold. Height is unchanged.
+fn node_box_size(svg: &SvgRoot, decl: &NodeDecl) -> Size {
+    let label = node_label(decl);
+    let text_w = measure_text(svg, &label, NODE_LABEL_FONT_FAMILY, NODE_LABEL_FONT_SIZE);
+    Size::new(node_box_width(text_w), NODE_H)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

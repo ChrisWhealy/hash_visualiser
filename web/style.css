@@ -5,6 +5,7 @@
     --muted: #9fb0c8;
     --accent: #6db3f2;
     --border: #2a3650;
+    --stage-left: 1rem;
 }
 
 * {
@@ -104,10 +105,11 @@ body {
     min-width: 0;
 }
 
+/* Matches the stage's left anchor so the heading stays directly above the diagram. */
 #title {
     padding: 1.5rem 2rem 0.5rem;
     max-width: 70rem;
-    margin: 0 auto;
+    margin: 0 0 0 var(--stage-left);
 }
 
 #title h1 {
@@ -142,10 +144,11 @@ code {
     white-space: pre-wrap;
 }
 
+/* Anchor the stage at a fixed width to the right of the file sidebar */
 #stage {
     padding: 1rem 2rem 1rem;
     max-width: 70rem;
-    margin: 0 auto;
+    margin: 0 0 0 var(--stage-left);
 }
 
 /* Shrink-to-fit column around the canvas and the transport bar, so the bar can be exactly as wide as the canvas
