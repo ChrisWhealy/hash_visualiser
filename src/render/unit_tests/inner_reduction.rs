@@ -2,7 +2,7 @@ use super::{check, eq, parse_and_build};
 use crate::{
     ast::ebnf_11::BinOp,
     render::{
-        apply_reduce, effective_matrix, expr_label, grid_spec, inferred_grid_shape, op_symbol,
+        reduce::apply_reduce, effective_matrix, expr_label, grid_spec, inferred_grid_shape,
         reduction_label_source, reduction_op,
     },
 };
@@ -41,11 +41,12 @@ fn should_left_fold_the_reduction() -> Result<(), String> {
 }
 
 #[test]
-fn should_label_reduction_operators() -> Result<(), String> {
-    eq(op_symbol(&BinOp::Xor), "xor")?;
-    eq(op_symbol(&BinOp::And), "and")?;
-    eq(op_symbol(&BinOp::Or), "or")?;
-    eq(op_symbol(&BinOp::Add), "+")
+fn should_label_reduction_operators_in_uppercase() -> Result<(), String> {
+    // The operation-row boxes label themselves from the operator's `Display` (uppercase), matching the nested-map viz.
+    eq(BinOp::Xor.to_string(), "XOR")?;
+    eq(BinOp::And.to_string(), "AND")?;
+    eq(BinOp::Or.to_string(), "OR")?;
+    eq(BinOp::Add.to_string(), "+")
 }
 
 #[test]
