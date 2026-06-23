@@ -13,6 +13,66 @@ fn array_of(src: &str, node: &str) -> Option<Vec<u64>> {
     node_array(graph.nodes.get(node).expect("node exists"), &graph)
 }
 
+fn matrix_of(src: &str, node: &str) -> Option<Vec<Vec<u64>>> {
+    let program = parse(src).expect("parse");
+    let graph = build(&program).expect("build");
+    node_matrix(graph.nodes.get(node).expect("node exists"), &graph)
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_evaluate_a_nested_map_over_a_matrix() -> Result<(), String> {
+    // hv/sha3/theta_mix.hv — A'[x][y] = A[x][y] XOR D[x], a nested map over the 5x5 state.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn ThetaXor(a: [[u64; 5]; 5], d: [u64; 5]) -> [[u64; 5]; 5] = [ for x in 0..5 => [ for y in 0..5 => a[x][y] xor d[x] ] ]\n\
+            data StateA = [\n\
+                [ 0x00, 0x01, 0x02, 0x03, 0x04 ],\n\
+                [ 0x10, 0x11, 0x12, 0x13, 0x14 ],\n\
+                [ 0x20, 0x21, 0x22, 0x23, 0x24 ],\n\
+                [ 0x30, 0x31, 0x32, 0x33, 0x34 ],\n\
+                [ 0x40, 0x41, 0x42, 0x43, 0x44 ] ]\n\
+            data VecD = [ 0xFF, 0xF0, 0x0F, 0xFFFF0000, 0xFFFFFFFF00000000 ]\n\
+            node aa  : register  { source: StateA }\n\
+            node dd  : register  { source: VecD }\n\
+            node out : operation { compute: ThetaXor(aa, dd) }\n";
+
+    let a: [[u64; 5]; 5] = [
+        [0x00, 0x01, 0x02, 0x03, 0x04],
+        [0x10, 0x11, 0x12, 0x13, 0x14],
+        [0x20, 0x21, 0x22, 0x23, 0x24],
+        [0x30, 0x31, 0x32, 0x33, 0x34],
+        [0x40, 0x41, 0x42, 0x43, 0x44],
+    ];
+    let d: [u64; 5] = [0xFF, 0xF0, 0x0F, 0xFFFF_0000, 0xFFFF_FFFF_0000_0000];
+    let want: Vec<Vec<u64>> = (0..5).map(|x| (0..5).map(|y| a[x][y] ^ d[x]).collect()).collect();
+
+    if matrix_of(src, "out").as_deref() != Some(want.as_slice()) {
+        return Err(format!("nested map wrong: got {:?}", matrix_of(src, "out")));
+    }
+    Ok(())
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn should_map_theta_mix_xor_loop_over_lanes() -> Result<(), String> {
+    // hv/sha3/theta_mix.hv — A'[x][y] = A[x][y] XOR D[x], a map XOR-ing each lane with a constant D.
+    let src = "\
+            context { word_size: 64 }\n\
+            fn MixD(a: [u64; 5]) -> [u64; 5] = [ for y in 0..5 => a[y] xor 0xFFFFFFFF00000000 ]\n\
+            data Lanes = [ 0x0, 0x1111111111111111, 0xFFFFFFFFFFFFFFFF, 0x0123456789ABCDEF, 0xFEDCBA9876543210 ]\n\
+            node lanes : register  { source: Lanes }\n\
+            node mixed : operation { compute: MixD(lanes) }\n";
+
+    let lanes = [0u64, 0x1111_1111_1111_1111, 0xFFFF_FFFF_FFFF_FFFF, 0x0123_4567_89AB_CDEF, 0xFEDC_BA98_7654_3210];
+    let want: Vec<u64> = lanes.iter().map(|&v| v ^ 0xFFFF_FFFF_0000_0000).collect();
+
+    if array_of(src, "mixed").as_deref() != Some(want.as_slice()) {
+        return Err(format!("mix wrong: got {:?}, want {want:?}", array_of(src, "mixed")));
+    }
+    Ok(())
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #[test]
 fn should_map_a_comprehension_over_an_array_with_mod_indexing() -> Result<(), String> {

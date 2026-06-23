@@ -1,0 +1,81 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// SHA-3 (Keccak) — Theta, the mixing loop
+//
+//
+// Theta is the first of Keccak's five step functions; it diffuses every lane using the parity of neighbouring columns.
+// It comes in two parts:
+//
+//   C[x] = A[x,0] XOR A[x,1] XOR A[x,2] XOR A[x,3] XOR A[x,4]   — column parity (see the ThetaC demo in sha3.hv)
+//   D[x] = C[x-1] XOR rotl(C[x+1], 1)                           — this file
+//
+// Each lane is then mixed:  A'[x,y] = A[x,y] XOR D[x].
+//
+// Theta finishes by folding the per-column parity value D[x] back into every lane of the original 5x5 state:
+//
+//   for x in 0..5:                       # for each column x:  a = A[x]  (its 5 lanes),  d = D[x]
+//       for y in 0..5:                   #   for each lane in that column:
+//           A'[x][y] = A[x][y] XOR D[x]  #     XOR it with the single value D[x]
+//
+// It is a nested loop: the outer loop walks the five columns (each paired with its own D[x]); the inner loop XORs that
+// one D[x] into all five lanes of the column. The input is the 5x5 state A and the 5-element vector D (from ThetaD —
+// see theta_d.hv); the output is another 5x5 array A'.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+context { word_size: 64 }
+
+layout: left_to_right
+
+// Outer map over columns x; inner map over lanes y. Every lane of column x is XORed with that column's D[x].
+fn ThetaXor(a: [[u64; 5]; 5], d: [u64; 5]) -> [[u64; 5]; 5] =
+    [ for x in 0..5 => [ for y in 0..5 => a[x][y] xor d[x] ] ]
+
+// The 5x5 state A (one row per column x; five lanes per row).
+data StateA = [
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0xea27f99aae2990e9, 0x725d7fa6a3fc2f70, 0x67796880082353e4 ],
+    [ 0xe8c0284800b19533, 0xf3c1294f291c1bc8, 0xadea5a3b0abf3906, 0xa94ebb2f1bd3f309, 0xbb114511e928a5df ]
+]
+
+// One D[x] per column. D[1] is zero, so column 1 passes through unchanged (XOR 0 is the identity).
+data VecD = [ 0xff03eebc05f6ec7d, 0x56b74bbed41f0d56, 0xa9b4a502d1e9e12b, 0x01862a260916aec5, 0x87b31884cb2732c2 ]
+
+node state : register {
+    label: "State A",
+    format: hex64,
+    source: StateA,
+}
+
+node dvec : register {
+    label: "ThetaD Output",
+    format: hex64,
+    source: VecD,
+}
+
+node mixed : operation {
+    symbol: "A'[x][y] = A[x][y] XOR D[x]",
+    format: hex64,
+    compute: ThetaXor(state, dvec),
+    description: """
+# Theta mixing — `A'[x][y] = A[x][y] XOR D[x]`
+
+The last part of Theta. Each column has a single value `D[x]` (built by ThetaD from the column parities), and that one
+value is XORed into **every** lane of the column:
+
+- the **outer** loop walks the five columns `x`, pairing each with its own `D[x]`;
+- the **inner** loop XORs that `D[x]` into all five lanes `y = 0..5` of the column.
+
+So the whole 5×5 state is transformed into a new 5×5 state. Because `D[1]` here is `0`, column 1 comes out unchanged —
+XOR with zero is the identity, and applying any `D[x]` twice would undo it, which is what makes Theta invertible.
+
+```rust
+fn theta_mix(a: &[[u64; 5]; 5], d: &[u64; 5]) -> [[u64; 5]; 5] {
+    std::array::from_fn(|x| std::array::from_fn(|y| a[x][y] ^ d[x]))
+}
+```
+"""
+}
+
+wire state -> mixed
+wire dvec  -> mixed

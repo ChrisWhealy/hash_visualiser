@@ -1,11 +1,14 @@
 //! A small evaluator: it computes a node's value so the renderer can show the "before" (input data) and "after"
 //! (computed result) values flowing through an operation.
 //!
-//! Values are either a single word or a 1-D array of words (e.g. SHA-3's column-parity vector). A comprehension maps to
-//! an array, `reduce` folds an array to a word, and indexing reads an element. Nested (2-D) arrays aren't evaluated —
-//! state grids are shown from their literal data rather than computed.
+//! Values are a single word or a (possibly nested) array of words (e.g. SHA-3's column-parity vector, or a 5x5 state).
+//! A comprehension maps to an array, a nested comprehension to a matrix, `reduce` folds a flat array to a word, and
+//! indexing reads an element (which may itself be an array, e.g. `a[x]` of a matrix).
+mod value;
 
 use std::collections::HashMap;
+
+use value::*;
 
 use crate::{
     ast::{
@@ -21,29 +24,24 @@ use crate::{
 const MAX_DEPTH: u32 = 64;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// A value flowing through the graph: a single word, or a 1-D array of words.
-#[derive(Clone)]
-enum Value {
-    Scalar(u64),
-    Array(Vec<u64>),
-}
-
 /// The scalar value a node carries: the literal behind its `source` data binding, or the result of evaluating its
 /// `compute` expression. `None` if it has no value, or its value is an array.
 pub(super) fn node_value(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<u64> {
-    match node_eval(decl, graph, 0)? {
-        Value::Scalar(v) => Some(v),
-        Value::Array(_) => None,
-    }
+    as_scalar(&node_eval(decl, graph, 0)?)
 }
 
-/// The 1-D array value a node carries (e.g. a `[u64; N]` data source or a comprehension result). `None` if it has no
-/// value, or its value is scalar.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// The 1-D array value a node carries (e.g. a `[u64; N]` data source or a comprehension result). `None` if absent or
+/// not a flat array of words.
 pub(super) fn node_array(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<Vec<u64>> {
-    match node_eval(decl, graph, 0)? {
-        Value::Array(a) => Some(a),
-        Value::Scalar(_) => None,
-    }
+    as_row(&node_eval(decl, graph, 0)?)
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// The 2-D matrix value a node carries (e.g. a `[[u64; N]; M]` data source or a nested comprehension result). `None` if
+/// absent or not a matrix of words.
+pub(super) fn node_matrix(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<Vec<Vec<u64>>> {
+    as_matrix(&node_eval(decl, graph, 0)?)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -69,7 +67,12 @@ fn node_eval(decl: &NodeDecl, graph: &ValidatedGraph, depth: u32) -> Option<Valu
 /// Evaluates an expression. `env` binds function parameters / comprehension variables to values; a bare identifier not
 /// in `env` is treated as a node reference and resolved to that node's value (so `compute: f(a)` resolves `a` to the
 /// `a` node's data).
-fn eval(expr: &Expr, env: &HashMap<String, Value>, graph: &ValidatedGraph, depth: u32) -> Option<Value> {
+fn eval(
+    expr: &Expr,
+    env: &HashMap<String, Value>,
+    graph: &ValidatedGraph,
+    depth: u32,
+) -> Option<Value> {
     if depth >= MAX_DEPTH {
         return None;
     }
@@ -84,7 +87,10 @@ fn eval(expr: &Expr, env: &HashMap<String, Value>, graph: &ValidatedGraph, depth
             None => node_eval(graph.nodes.get(name)?, graph, depth + 1),
         },
 
-        Expr::Not(e) => Some(Value::Scalar(mask(!eval_scalar(e, env, graph, depth)?, bits))),
+        Expr::Not(e) => Some(Value::Scalar(mask(
+            !eval_scalar(e, env, graph, depth)?,
+            bits,
+        ))),
 
         Expr::BinOp { op, lhs, rhs } => {
             let a = eval_scalar(lhs, env, graph, depth)?;
@@ -104,42 +110,52 @@ fn eval(expr: &Expr, env: &HashMap<String, Value>, graph: &ValidatedGraph, depth
             eval(&def.body, &child, graph, depth + 1)
         }
 
-        // `base[index]`: read one element of an array.
+        // `base[index]`: read one element of an array (which may itself be an array, e.g. `a[x]` of a matrix).
         Expr::Index { base, index } => {
-            let array = eval_array(base, env, graph, depth)?;
+            let Value::Array(items) = eval(base, env, graph, depth)? else {
+                return None;
+            };
             let i = eval_scalar(index, env, graph, depth)? as usize;
-            array.get(i).copied().map(Value::Scalar)
+            items.get(i).cloned()
         }
 
-        // `[ v0, v1, … ]`: a 1-D array literal of scalars.
+        // `[ e0, e1, … ]`: an array literal; each element may be a scalar or a nested array.
         Expr::Array(elems) => {
-            let values: Option<Vec<u64>> = elems.iter().map(|e| eval_scalar(e, env, graph, depth)).collect();
+            let values: Option<Vec<Value>> =
+                elems.iter().map(|e| eval(e, env, graph, depth)).collect();
             Some(Value::Array(values?))
         }
 
-        // `[ for x in start..end => body ]`: map each `x` to a scalar, collecting an array.
-        Expr::Comprehension { var, start, end, body } => {
+        // `[ for x in start..end => body ]`: map each `x` through the body (scalar or nested), collecting an array.
+        Expr::Comprehension {
+            var,
+            start,
+            end,
+            body,
+        } => {
             let mut out = Vec::with_capacity(end.saturating_sub(*start) as usize);
             for x in *start..*end {
                 let mut child = env.clone();
                 child.insert(var.clone(), Value::Scalar(x));
-                out.push(eval_scalar(body, &child, graph, depth + 1)?);
+                out.push(eval(body, &child, graph, depth + 1)?);
             }
             Some(Value::Array(out))
         }
 
-        // `reduce <op> over array`: fold an array to a scalar with an associative operator.
+        // `reduce <op> over array`: fold a flat array to a scalar with an associative operator.
         Expr::Reduce { op, array } => {
-            let values = eval_array(array, env, graph, depth)?;
-            let folded = values.into_iter().reduce(|a, b| apply_binop(op, a, b, bits))?;
+            let folded = eval_row(array, env, graph, depth)?
+                .into_iter()
+                .reduce(|a, b| apply_binop(op, a, b, bits))?;
             Some(Value::Scalar(folded))
         }
     }
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Evaluates `expr` as a scalar with the comprehension variable `var` bound to `x` and the array parameter `array`
-/// bound to `values`. The map visualiser uses this to compute each sub-expression of a comprehension body for a chosen
-/// `x` (e.g. `c[(x + 1) mod 5]`, `rotl(…, 1)`, the final `xor`).
+/// bound to `values`. The map visualiser uses this to compute each sub-expression of a (1-D) comprehension body for a
+/// chosen `x` (e.g. `c[(x + 1) mod 5]`, `rotl(…, 1)`, the final `xor`).
 pub(super) fn eval_scalar_with(
     expr: &Expr,
     var: &str,
@@ -150,24 +166,33 @@ pub(super) fn eval_scalar_with(
 ) -> Option<u64> {
     let mut env: HashMap<String, Value> = HashMap::with_capacity(2);
     env.insert(var.to_string(), Value::Scalar(x));
-    env.insert(array.to_string(), Value::Array(values.to_vec()));
+    env.insert(
+        array.to_string(),
+        Value::Array(values.iter().map(|&v| Value::Scalar(v)).collect()),
+    );
     eval_scalar(expr, &env, graph, 0)
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Evaluates `expr`, requiring a scalar result.
-fn eval_scalar(expr: &Expr, env: &HashMap<String, Value>, graph: &ValidatedGraph, depth: u32) -> Option<u64> {
-    match eval(expr, env, graph, depth)? {
-        Value::Scalar(v) => Some(v),
-        Value::Array(_) => None,
-    }
+fn eval_scalar(
+    expr: &Expr,
+    env: &HashMap<String, Value>,
+    graph: &ValidatedGraph,
+    depth: u32,
+) -> Option<u64> {
+    as_scalar(&eval(expr, env, graph, depth)?)
 }
 
-/// Evaluates `expr`, requiring an array result.
-fn eval_array(expr: &Expr, env: &HashMap<String, Value>, graph: &ValidatedGraph, depth: u32) -> Option<Vec<u64>> {
-    match eval(expr, env, graph, depth)? {
-        Value::Array(a) => Some(a),
-        Value::Scalar(_) => None,
-    }
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Evaluates `expr`, requiring a flat array of words.
+fn eval_row(
+    expr: &Expr,
+    env: &HashMap<String, Value>,
+    graph: &ValidatedGraph,
+    depth: u32,
+) -> Option<Vec<u64>> {
+    as_row(&eval(expr, env, graph, depth)?)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -226,7 +251,11 @@ fn word_bits(graph: &ValidatedGraph) -> u32 {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Keeps only the low `bits` bits of `v`.
 fn mask(v: u64, bits: u32) -> u64 {
-    if bits >= 64 { v } else { v & ((1u64 << bits) - 1) }
+    if bits >= 64 {
+        v
+    } else {
+        v & ((1u64 << bits) - 1)
+    }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -4,13 +4,14 @@ mod declared_node;
 mod description;
 mod inner_reduction;
 mod layout;
+mod nested_map;
 mod step_buttons;
 
 use crate::{
     graph::{ValidatedGraph, build},
     render::{
         cell_width, description_html, format_value, grid_size, grid_spec, inferred_grid_shape,
-        placeholder_value, step_back, step_forward, step_range,
+        is_map_operation, nested_map, placeholder_value, step_back, step_forward, step_range,
     },
 };
 

@@ -1,5 +1,5 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// SHA-3 (Keccak) — Theta, part D
+// SHA-3 (Keccak) — Theta Step Function, part D
 //
 // Theta is the first of Keccak's five step functions; it diffuses every lane using the parity of neighbouring columns.
 // It comes in two parts:
@@ -7,10 +7,10 @@
 //   C[x] = A[x,0] XOR A[x,1] XOR A[x,2] XOR A[x,3] XOR A[x,4]   — column parity (see the ThetaC demo in sha3.hv)
 //   D[x] = C[x-1] XOR rotl(C[x+1], 1)                           — this file
 //
-// and each lane is then mixed:  A'[x,y] = A[x,y] XOR D[x].
+// Each lane is then mixed:  A'[x,y] = A[x,y] XOR D[x].
 //
-// ThetaD is a *map*: it takes the 5-element column-parity vector C and produces a 5-element vector D, computing each
-// D[x] from the two neighbouring parities. The column indices wrap modulo 5, which is why the map uses `mod`.
+// ThetaD takes the output of ThetaC and returns a new 5-element vector D by computing each element as
+// `c[(x + 4) mod 5] xor (c[(x + 1) mod 5] rotl_u 1)`.
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 context { word_size: 64 }
@@ -22,7 +22,7 @@ layout: left_to_right
 fn ThetaD(c: [u64; 5]) -> [u64; 5] = [ for x in 0..5 => c[(x + 4) mod 5] xor (c[(x + 1) mod 5] rotl_u 1) ]
 
 // The five column parities. In the full algorithm these come from ThetaC; here they are given directly.
-data Parities = [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0xff03eebc05f6ec7d, 0xa9b4a502d1e9e12b ]
+data Parities = [ 0xa9b4a502d1e9e12b, 0x0000000000000000, 0xff81f75e02fb763e, 0xd4da528168f4f095, 0xff03eebc05f6ec7d ]
 
 node c : register {
     label: "Input parities (c)",
@@ -48,10 +48,13 @@ node d : operation {
     description: """
 # Theta D — `D[x] = C[x-1] XOR rotl(C[x+1], 1)`
 
-`ThetaD` maps the 5-element column-parity vector `C` to a 5-element vector `D`.
+`ThetaD` takes the output of `ThetaC` and returns a new 5-element vector `D` by computing each element as:
 
-For each column it blends the parity of the column to the **left** with the **bit-rotated** parity of the column to
-the **right**:
+```
+c[(x + 4) mod 5] xor (c[(x + 1) mod 5] rotl_u 1)
+```
+
+That is, it takes the column to the **left** and `XOR`s it with the **bit-rotated** column to the **right**:
 
 - the neighbours are picked with wrap-around — `C[(x+4) mod 5]` and `C[(x+1) mod 5]` — so column 0's left neighbour is
   column 4, and column 4's right neighbour is column 0;

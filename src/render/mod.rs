@@ -153,15 +153,20 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
     // The reduction step buttons live in a fixed transport bar (`#transport`). Only create it when a node actually
     // feeds a `reduce` and so needs it; otherwise the bar is left empty and the page hides it (CSS `:empty`), so a
     // scalar function — which has nothing to step through — shows no empty transport footer at all.
-    let transport = if grids
-        .keys()
-        .any(|name| reduction_op(name, graph).is_some() || comprehension_map(name, graph).is_some())
-    {
+    let transport = if grids.keys().any(|name| {
+        reduction_op(name, graph).is_some()
+            || comprehension_map(name, graph).is_some()
+            || nested_map(name, graph).is_some()
+    }) {
         SvgRoot::create_in("transport", Size::new(TRANSPORT_W, TRANSPORT_H)).ok()
     } else {
         None
     };
 
+    // Phase 1: draw every node's body. Grid cells are kept so a step visualisation can highlight a *sibling* grid (the
+    // nested-map viz highlights the selected element in the broadcast-vector grid, which is a different node).
+    let mut grid_cells: HashMap<String, Vec<Vec<SvgNode>>> = HashMap::new();
+    let mut grid_geom: HashMap<String, (Point, f64)> = HashMap::new(); // origin + grid bottom edge
     for (name, rect) in &placement {
         let decl = &graph.nodes[name];
         max_x = max_x.max(rect.top_left.x + rect.size.width);
@@ -172,60 +177,76 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
             let (group, cells) = render_array_node(svg, decl, origin, spec)?;
             attach_description(svg, &group, decl, *rect)?;
             nodes.insert(name.clone(), group);
-
-            let grid_bottom = origin.y + rect.size.height;
-
-            // When the node feeds a `reduce`, visualise the inner fold below the grid; otherwise just the step buttons.
-            let (mut ctrls, bottom_right) = match reduction_op(name, graph) {
-                Some(op) => {
-                    let matrix = effective_matrix(spec);
-                    let label_source = reduction_label_source(name, graph);
-                    render_reduction(
-                        svg,
-                        transport.as_ref(),
-                        spec,
-                        &matrix,
-                        &op,
-                        label_source,
-                        origin,
-                        grid_bottom,
-                        cells,
-                    )?
-                }
-                // When the node feeds a `map` comprehension, visualise the per-element body computation.
-                None => match comprehension_map(name, graph) {
-                    Some(map) => render_map(
-                        svg,
-                        transport.as_ref(),
-                        spec,
-                        &effective_matrix(spec),
-                        &map,
-                        origin,
-                        grid_bottom,
-                        cells,
-                        graph,
-                    )?,
-                    // A single-row grid (e.g. a scalar "before"/"after" value) has nothing to step through, so it gets
-                    // no step buttons. Multi-row data grids still do.
-                    None if spec.rows <= 1 => (Vec::new(), Point::new(origin.x + spec.cell_w, grid_bottom)),
-                    None => {
-                        let btn_origin = Point::new(origin.x, grid_bottom + BTN_GAP);
-                        (
-                            render_step_controls(svg, btn_origin, spec.step_range, cells)?,
-                            Point::new(origin.x + spec.cell_w, btn_origin.y + BTN_H),
-                        )
-                    }
-                },
-            };
-
-            controls.append(&mut ctrls);
-            max_x = max_x.max(bottom_right.x);
-            max_y = max_y.max(bottom_right.y);
+            grid_geom.insert(name.clone(), (origin, origin.y + rect.size.height));
+            grid_cells.insert(name.clone(), cells);
         } else {
             let group = render_node(svg, decl, *rect)?;
             attach_description(svg, &group, decl, *rect)?;
             nodes.insert(name.clone(), group);
         }
+    }
+
+    // Phase 2: draw each grid's step visualisation below it (now that every grid's cells exist).
+    for name in placement.keys() {
+        let Some(spec) = grids.get(name) else {
+            continue;
+        };
+        let (origin, grid_bottom) = grid_geom[name];
+        let cells = grid_cells[name].clone();
+
+        // When the node feeds a `reduce`, visualise the inner fold below the grid; otherwise just the step buttons.
+        let (mut ctrls, bottom_right) = match reduction_op(name, graph) {
+            Some(op) => {
+                let matrix = effective_matrix(spec);
+                let label_source = reduction_label_source(name, graph);
+                render_reduction(
+                    svg,
+                    transport.as_ref(),
+                    spec,
+                    &matrix,
+                    &op,
+                    label_source,
+                    origin,
+                    grid_bottom,
+                    cells,
+                )?
+            }
+            // When the node feeds a `map` comprehension, visualise the per-element body computation; otherwise the
+            // grid is plain data (or a computed result) with nothing to step through.
+            None => match comprehension_map(name, graph) {
+                Some(map) => render_map(
+                    svg,
+                    transport.as_ref(),
+                    spec,
+                    &effective_matrix(spec),
+                    &map,
+                    origin,
+                    grid_bottom,
+                    cells,
+                    graph,
+                )?,
+                // A nested map (matrix ⊕ broadcast vector) visualises the row-by-row fold building up the output.
+                None => match nested_map(name, graph) {
+                    Some(nmap) => render_nested_map(
+                        svg,
+                        transport.as_ref(),
+                        spec,
+                        &effective_matrix(spec),
+                        &nmap,
+                        origin,
+                        grid_bottom,
+                        cells,
+                        grid_cells.get(&nmap.vec_node).cloned(),
+                        graph,
+                    )?,
+                    None => (Vec::new(), Point::new(origin.x + spec.cell_w, grid_bottom)),
+                },
+            },
+        };
+
+        controls.append(&mut ctrls);
+        max_x = max_x.max(bottom_right.x);
+        max_y = max_y.max(bottom_right.y);
     }
 
     svg.set_viewport(Size::new(max_x + MARGIN, max_y + MARGIN))?;
@@ -572,6 +593,7 @@ fn grid_spec(name: &str, decl: &NodeDecl, graph: &ValidatedGraph, ch: f64) -> Op
     // result) shown as a single row; then a single scalar value shown in a 1×1 cell. So "before"/"after" values are
     // visualised whether they're a word, a vector, or a matrix.
     let values = node_data_matrix(decl, graph)
+        .or_else(|| eval::node_matrix(decl, graph))
         .or_else(|| eval::node_array(decl, graph).map(|row| vec![row]))
         .or_else(|| eval::node_value(decl, graph).map(|v| vec![vec![v]]));
     let (rows, cols) = match &values {
@@ -666,14 +688,20 @@ struct MapInfo {
     array_param: String,
 }
 
-/// If `name` feeds a function that is a (non-reduce) map comprehension, returns its details, so the renderer can
-/// visualise the per-element computation. A reduce-comprehension is handled by [`render_reduction`] instead.
+/// A comprehension body the map visualiser can draw as an expression tree: a single (scalar) element, not a nested
+/// comprehension or a reduction (those are visualised differently / not yet).
+fn is_simple_map_body(body: &Expr) -> bool {
+    !matches!(body, Expr::Comprehension { .. }) && find_reduction_op(body).is_none()
+}
+
+/// If `name` feeds a function that is a simple (1-D, non-reduce) map comprehension, returns its details so the renderer
+/// can visualise the per-element computation. Reduce- and nested-comprehensions aren't handled here.
 fn comprehension_map(name: &str, graph: &ValidatedGraph) -> Option<MapInfo> {
     let func = fed_function(name, graph)?;
     let Expr::Comprehension { var, start, end, body } = &func.body else {
         return None;
     };
-    if find_reduction_op(body).is_some() {
+    if !is_simple_map_body(body) {
         return None;
     }
     Some(MapInfo {
@@ -681,6 +709,63 @@ fn comprehension_map(name: &str, graph: &ValidatedGraph) -> Option<MapInfo> {
         body: (**body).clone(),
         range: (*start as usize, *end as usize),
         array_param: func.params.first()?.name.clone(),
+    })
+}
+
+/// A nested map a matrix grid node feeds: `fn f(a: [[..];M], d: [..]) = [ for x => [ for y => a[x][y] op d[x] ] ]`
+/// — the outer loop walks rows of the matrix `a` (each paired with one broadcast value `d[x]`); the inner loop folds
+/// that value into every element of the row. Detected for the *matrix* input only, so the visualiser draws it once.
+struct NestedMapInfo {
+    /// Half-open range the step buttons walk — the outer comprehension's range.
+    outer_range: (usize, usize),
+    /// The matrix and broadcast-vector parameter names (for the `a[x]` / `d[x]` labels).
+    matrix_param: String,
+    vec_param: String,
+    /// Node supplying the broadcast vector `d`, and the operation node holding the computed output.
+    vec_node: String,
+    op_node: String,
+    /// Glyph for the per-element operation box (the inner body's operator, e.g. `XOR`).
+    op_label: String,
+}
+
+/// If the matrix grid node `matrix_node` is the first argument of an operation that applies a nested map, returns its
+/// details so the renderer can visualise the row-by-row fold. `None` for the broadcast-vector input or any other node.
+fn nested_map(matrix_node: &str, graph: &ValidatedGraph) -> Option<NestedMapInfo> {
+    graph.nodes.iter().find_map(|(op_name, decl)| {
+        let Expr::Call { name: callee, args } = compute_expr(decl)? else {
+            return None;
+        };
+        // The matrix must be the first argument and the broadcast vector the second.
+        let (Expr::Ident(first), Some(Expr::Ident(vec_node))) = (args.first()?, args.get(1)) else {
+            return None;
+        };
+        if first != matrix_node {
+            return None;
+        }
+
+        let func = graph.fn_defs.get(callee)?;
+        let Expr::Comprehension { start, end, body: inner, .. } = &func.body else {
+            return None;
+        };
+        let Expr::Comprehension { body: leaf, .. } = inner.as_ref() else {
+            return None;
+        };
+        if !is_simple_map_body(leaf) || func.params.len() < 2 {
+            return None;
+        }
+
+        let op_label = match leaf.as_ref() {
+            Expr::BinOp { op, .. } => op.to_string(),
+            _ => "f".to_string(),
+        };
+        Some(NestedMapInfo {
+            outer_range: (*start as usize, *end as usize),
+            matrix_param: func.params[0].name.clone(),
+            vec_param: func.params[1].name.clone(),
+            vec_node: vec_node.clone(),
+            op_node: op_name.clone(),
+            op_label,
+        })
     })
 }
 
@@ -695,17 +780,24 @@ fn compute_expr(decl: &NodeDecl) -> Option<&Expr> {
         })
 }
 
-/// Whether `decl` is the operation node that applies a map comprehension (i.e. its `compute` calls a function whose
-/// body is a non-reduce comprehension). Such a node renders as a plain box — its output is shown by the map
-/// visualisation attached to the *input* grid, so a separate output grid would just duplicate it.
+/// Whether `decl` is the operation node that applies a map comprehension — 1-D (`[ for x => … ]`) or nested
+/// (`[ for x => [ for y => … ] ]`). Such a node renders as a plain box: its output is shown by the map visualisation
+/// attached to the *input* grid (the per-element computation building up the result), so a separate output grid would
+/// just duplicate it.
 fn is_map_operation(decl: &NodeDecl, graph: &ValidatedGraph) -> bool {
     let Some(Expr::Call { name, .. }) = compute_expr(decl) else {
         return false;
     };
-    matches!(
-        graph.fn_defs.get(name).map(|f| &f.body),
-        Some(Expr::Comprehension { body, .. }) if find_reduction_op(body).is_none()
-    )
+    graph.fn_defs.get(name).map(|f| is_map_body(&f.body)).unwrap_or(false)
+}
+
+/// Whether `body` is a map comprehension over a simple (non-reduce) leaf: one comprehension layer (1-D) or several
+/// nested (N-D).
+fn is_map_body(body: &Expr) -> bool {
+    match body {
+        Expr::Comprehension { body: inner, .. } => is_simple_map_body(inner) || is_map_body(inner),
+        _ => false,
+    }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1076,54 +1168,6 @@ fn highlight_row(cells: &[Vec<SvgNode>], active: usize) {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/// Draws the "step back / step forward" buttons and wires their clicks to the row highlight.
-///
-/// Stepping is clamped to the half-open `range` (`[start, end)` defined in the comprehension), so the buttons stop at
-/// the first and last visited rows rather than wrapping around.
-/// 
-/// The shared `current` index and the cell handles are captured by the click closures (which live inside the returned
-/// button nodes), so the buttons must be kept alive for the controls to keep working.
-fn render_step_controls(
-    svg: &SvgRoot,
-    origin: Point,
-    range: (usize, usize),
-    cells: Vec<Vec<SvgNode>>,
-) -> Result<Vec<SvgNode>, Error> {
-    let cells = Rc::new(cells);
-    let current = Rc::new(Cell::new(range.0));
-
-    // Start with the first row of the range highlighted.
-    highlight_row(&cells[..], current.get());
-
-    let back = make_button(svg, origin, "\u{2190} Step back")?;
-    {
-        let cells = Rc::clone(&cells);
-        let current = Rc::clone(&current);
-        back.on_click(move |_| {
-            let r = step_back(current.get(), range);
-            current.set(r);
-            highlight_row(&cells[..], r);
-        })?;
-    }
-
-    let fwd = make_button(
-        svg,
-        Point::new(origin.x + BTN_W + BTN_GAP, origin.y),
-        "Step forward \u{2192}",
-    )?;
-    {
-        let cells = Rc::clone(&cells);
-        let current = Rc::clone(&current);
-        fwd.on_click(move |_| {
-            let r = step_forward(current.get(), range);
-            current.set(r);
-            highlight_row(&cells[..], r);
-        })?;
-    }
-
-    Ok(vec![back, fwd])
-}
-
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Draws a value cell (rect + centred, byte-spaced text) and returns the (rect, text) handles.
 fn draw_value_cell(
@@ -1630,6 +1674,240 @@ fn render_map(
     Ok((vec![back, fwd], Point::new(right, bottom)))
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Visualises a nested map below its matrix input grid. For the selected outer row `x`, the row `a[x]` is folded
+/// element-wise with the single broadcast value `d[x]` (e.g. `a[x][y] XOR d[x]`), and the resulting row is written
+/// into a building-up output grid.
+///
+/// Layout (all aligned to the grid's columns):
+///   * a **working row** — a live copy of the selected matrix row `a[x]`, with the broadcast cell `d[x]` beside it;
+///   * an **operation row** — one `op` box per lane; each lane drops in from above and `d[x]` arrives off a broadcast
+///     bus from the side;
+///   * a **result row** — this iteration's output lanes, directly below the boxes; and
+///   * an **output grid** — `rows × cols`. Stepping forward writes row `x`; stepping back blanks the row just left, so
+///     the grid reflects only the rows reached so far.
+///
+/// The Step buttons step the outer index `x` across the comprehension's range, filling the output one row at a time.
+#[allow(clippy::too_many_arguments)]
+fn render_nested_map(
+    svg: &SvgRoot,
+    transport: Option<&SvgRoot>,
+    spec: &GridSpec,
+    matrix: &[Vec<u64>],
+    info: &NestedMapInfo,
+    grid_origin: Point,
+    grid_bottom: f64,
+    input_cells: Vec<Vec<SvgNode>>,
+    vec_cells: Option<Vec<Vec<SvgNode>>>,
+    graph: &ValidatedGraph,
+) -> Result<(Vec<SvgNode>, Point), Error> {
+    let (cell_w, cell_h, gap) = (spec.cell_w, spec.cell_h, spec.cell_gap);
+    let (cols, rows, digits) = (spec.cols, spec.rows, spec.digits);
+    let range = info.outer_range;
+    let start = range.0;
+
+    let col_x = |c: f64| grid_origin.x + c * (cell_w + gap);
+
+    // Input data: the broadcast vector and the precomputed output matrix.
+    let vector: Vec<u64> =
+        graph.nodes.get(&info.vec_node).and_then(|d| eval::node_array(d, graph)).unwrap_or_default();
+    let output: Vec<Vec<u64>> =
+        graph.nodes.get(&info.op_node).and_then(|o| eval::node_matrix(o, graph)).unwrap_or_default();
+
+    // Layout bands below the grid (mirrors the reduction viz).
+    let content_top = grid_bottom + cell_h;
+    let label_baseline = content_top + cell_h * 0.7;
+    let working_y = content_top + cell_h;
+    let working_bottom = working_y + cell_h;
+    let op_y = working_y + 2.0 * cell_h;
+    let op_mid = op_y + cell_h / 2.0;
+    let result_y = op_y + 2.0 * cell_h;
+    let output_y = result_y + 2.0 * cell_h;
+    let rail_y = working_bottom + cell_h / 2.0; // broadcast bus, in the clear band above the op row
+    let d_col = cols as f64 + 0.5; // the d[x] cell sits a column-gap to the right of the lanes
+
+    // --- labels (a[x] over the working row, d[x] over the broadcast cell) ---
+    let mk_label = |pos: Point, text: &str| -> Result<SvgNode, Error> {
+        let lbl = svg.text(pos, text)?;
+        lbl.set_fill(PALE_BLUE_GREY)?;
+        lbl.set_attr("font-family", CELL_FONT_FAMILY)?;
+        lbl.set_attr("font-size", "13")?;
+        Ok(lbl)
+    };
+    let working_label =
+        mk_label(Point::new(grid_origin.x, label_baseline), &format!("{}[{}]", info.matrix_param, start))?;
+    let d_label = mk_label(Point::new(col_x(d_col), label_baseline), &format!("{}[{}]", info.vec_param, start))?;
+
+    // --- working row: a live copy of the selected matrix row a[x] ---
+    let start_row = matrix.get(start).cloned().unwrap_or_default();
+    let mut working_texts = Vec::with_capacity(cols);
+    for c in 0..cols {
+        let content = format_value(start_row.get(c).copied().unwrap_or(0), digits);
+        let (_, text) =
+            draw_value_cell(svg, Point::new(col_x(c as f64), working_y), Size::new(cell_w, cell_h), &content)?;
+        working_texts.push(text);
+    }
+
+    // --- broadcast cell d[x] ---
+    let (_, d_text) = draw_value_cell(
+        svg,
+        Point::new(col_x(d_col), working_y),
+        Size::new(cell_w, cell_h),
+        &format_value(vector.get(start).copied().unwrap_or(0), digits),
+    )?;
+
+    // --- operation row: one `op` box per lane ---
+    for c in 0..cols {
+        let box_ = svg.rect(Point::new(col_x(c as f64), op_y), Size::new(cell_w, cell_h))?;
+        box_.set_fill(DEEP_SLATE_BLUE)?;
+        box_.set_stroke(HILITE_FILL)?;
+        box_.set_stroke_width(1.0)?;
+        box_.set_attr("rx", "4")?;
+
+        let label = svg.text(Point::new(col_x(c as f64) + cell_w / 2.0, op_mid), &info.op_label)?;
+        label.set_fill(PALE_BLUE_GREY)?;
+        label.set_attr("text-anchor", "middle")?;
+        label.set_attr("dominant-baseline", "central")?;
+        label.set_attr("font-family", "sans-serif")?;
+        label.set_attr("font-size", "12")?;
+    }
+
+    // --- wires: lane drops, the broadcast bus, and result drops ---
+    for c in 0..cols {
+        let cx = col_x(c as f64) + cell_w / 2.0;
+        // Each lane drops straight into its box top.
+        wire(svg, &[Point::new(cx, working_bottom), Point::new(cx, op_y)])?;
+        // The broadcast value enters each box from its left edge, off the bus.
+        let lx = col_x(c as f64);
+        wire(svg, &[Point::new(lx, rail_y), Point::new(lx, op_mid)])?;
+        // Each box drops into its result cell.
+        wire(svg, &[Point::new(cx, op_y + cell_h), Point::new(cx, result_y)])?;
+    }
+    // The broadcast bus: from d[x] down to the rail, then left across all the boxes.
+    let d_cx = col_x(d_col) + cell_w / 2.0;
+    wire(svg, &[Point::new(d_cx, working_bottom), Point::new(d_cx, rail_y), Point::new(col_x(0.0), rail_y)])?;
+
+    // --- result row: this iteration's output lanes ---
+    let mut result_texts = Vec::with_capacity(cols);
+    for c in 0..cols {
+        let content =
+            output.get(start).and_then(|r| r.get(c)).map(|&v| format_value(v, digits)).unwrap_or_default();
+        let (_, text) =
+            draw_value_cell(svg, Point::new(col_x(c as f64), result_y), Size::new(cell_w, cell_h), &content)?;
+        result_texts.push(text);
+    }
+
+    // --- output grid: rows × cols, filling one row per step ---
+    let mut output_rects: Vec<Vec<SvgNode>> = Vec::with_capacity(rows);
+    let mut output_texts: Vec<Vec<SvgNode>> = Vec::with_capacity(rows);
+    for r in 0..rows {
+        let mut rect_row = Vec::with_capacity(cols);
+        let mut text_row = Vec::with_capacity(cols);
+        for c in 0..cols {
+            let y = output_y + r as f64 * (cell_h + gap);
+            let (rect, text) =
+                draw_value_cell(svg, Point::new(col_x(c as f64), y), Size::new(cell_w, cell_h), "")?;
+            rect_row.push(rect);
+            text_row.push(text);
+        }
+        output_rects.push(rect_row);
+        output_texts.push(text_row);
+    }
+
+    // --- shared navigation: forward writes output row x; back blanks the row just left ---
+    let matrix = matrix.to_vec();
+    let (matrix_param, vec_param) = (info.matrix_param.clone(), info.vec_param.clone());
+    let current = Cell::new(start);
+
+    let go: Rc<dyn Fn(StepAction)> = Rc::new(move |action: StepAction| {
+        let old = current.get();
+        let x = match action {
+            StepAction::Init => old,
+            StepAction::Forward => step_forward(old, range),
+            StepAction::Back => step_back(old, range),
+        };
+        current.set(x);
+
+        highlight_row(&input_cells[..], x);
+        // Highlight the selected element d[x] in the original broadcast-vector grid (a 1×N row).
+        if let Some(row) = vec_cells.as_ref().and_then(|c| c.first()) {
+            for (i, cell) in row.iter().enumerate() {
+                let _ = cell.set_fill(if i == x { HILITE_FILL } else { CELL_FILL });
+            }
+        }
+
+        if let Some(row) = matrix.get(x) {
+            for (c, t) in working_texts.iter().enumerate() {
+                t.set_text(&format_value(row.get(c).copied().unwrap_or(0), digits));
+            }
+        }
+        d_text.set_text(&format_value(vector.get(x).copied().unwrap_or(0), digits));
+        for (c, t) in result_texts.iter().enumerate() {
+            t.set_text(
+                &output.get(x).and_then(|r| r.get(c)).map(|&v| format_value(v, digits)).unwrap_or_default(),
+            );
+        }
+        working_label.set_text(&format!("{matrix_param}[{x}]"));
+        d_label.set_text(&format!("{vec_param}[{x}]"));
+
+        match action {
+            // Arriving at a row (forward, or the initial display) writes it into the output grid.
+            StepAction::Init | StepAction::Forward => {
+                if let (Some(vals), Some(texts)) = (output.get(x), output_texts.get(x)) {
+                    for (t, v) in texts.iter().zip(vals) {
+                        t.set_text(&format_value(*v, digits));
+                    }
+                }
+            }
+            // Stepping back un-computes: blank the row we just left.
+            StepAction::Back => {
+                if x < old
+                    && let Some(texts) = output_texts.get(old)
+                {
+                    for t in texts {
+                        t.set_text("");
+                    }
+                }
+            }
+        }
+
+        for (r, row) in output_rects.iter().enumerate() {
+            let fill = if r == x { HILITE_FILL } else { CELL_FILL };
+            for rect in row {
+                let _ = rect.set_fill(fill);
+            }
+        }
+    });
+    go(StepAction::Init);
+
+    // --- step buttons: in the transport bar if available, otherwise below the diagram ---
+    let output_bottom = output_y + rows as f64 * (cell_h + gap);
+    let (button_root, back_pt) = match transport {
+        Some(t) => (t, Point::new(TRANSPORT_PAD, (TRANSPORT_H - BTN_H) / 2.0)),
+        None => (svg, Point::new(grid_origin.x, output_bottom + cell_h)),
+    };
+    let fwd_pt = Point::new(back_pt.x + BTN_W + BTN_GAP, back_pt.y);
+
+    let back = make_button(button_root, back_pt, "\u{2190} Step back")?;
+    {
+        let go = Rc::clone(&go);
+        back.on_click(move |_| go(StepAction::Back))?;
+    }
+    let fwd = make_button(button_root, fwd_pt, "Step forward \u{2192}")?;
+    {
+        let go = Rc::clone(&go);
+        fwd.on_click(move |_| go(StepAction::Forward))?;
+    }
+
+    let content_right = col_x(d_col) + cell_w;
+    let (right, bottom) = match transport {
+        Some(_) => (content_right, output_bottom),
+        None => (content_right.max(fwd_pt.x + BTN_W), fwd_pt.y + BTN_H),
+    };
+    Ok((vec![back, fwd], Point::new(right, bottom)))
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Draws a connector wire through an orthogonal polyline (no fill, grey stroke), rounding each elbow.
 fn wire(svg: &SvgRoot, points: &[Point]) -> Result<(), Error> {
     let path = svg.path(&wire_path_data(points, WIRE_CORNER_RADIUS))?;

@@ -1,0 +1,54 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// SHA-3 (Keccak) — Theta Step Function, part C
+//
+// Theta is the first of Keccak's five step functions; it diffuses every lane using the parity of neighbouring columns.
+// It comes in two parts:
+//
+//   C[x] = A[x,0] XOR A[x,1] XOR A[x,2] XOR A[x,3] XOR A[x,4]   — column parity (see the ThetaC demo in sha3.hv)
+//   D[x] = C[x-1] XOR rotl(C[x+1], 1)                           — this file
+//
+// Each lane is then mixed:  A'[x,y] = A[x,y] XOR D[x].
+//
+// For each lane in the 5x5 state array, ThetaC computes that lane's XOR parity and returns a 5-element vector.
+//
+// Expressed declaratively as an array comprehension over the columns, whose body XOR-reduces each lane (row).
+//
+// The state's actual values are declared as a `data` binding (`A`); the `state` node references it via `source: A`,
+// and the `c` operation node applies the function to it via `compute: ThetaC(state)`.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+context { word_size: 64 }
+
+fn ThetaC(a: [[u64; 5]; 5]) -> [u64; 5] = [ for x in 0..5 => reduce xor over a[x] ]
+
+data InputData = [
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0xea27f99aae2990e9, 0x725d7fa6a3fc2f70, 0x67796880082353e4 ],
+    [ 0xe8c0284800b19533, 0xf3c1294f291c1bc8, 0xadea5a3b0abf3906, 0xa94ebb2f1bd3f309, 0xbb114511e928a5df ]
+]
+
+node state : register  { label: "State", format: hex64, source: InputData }
+node c     : operation {
+    symbol: "ThetaC",
+    compute: ThetaC(state),
+    description: """
+# Theta-C
+
+For each row `x`, XOR all five lanes down to a single `u64` parity value.
+
+```rust
+fn theta_c(state: &[[u64; 5]; 5]) -> [u64; 5] {
+    let mut c = [0u64; 5];
+    for x in 0..5 {
+        c[x] = state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4];
+    }
+    c
+}
+```
+"""
+}
+
+layout: left_to_right
+
+wire state -> c
