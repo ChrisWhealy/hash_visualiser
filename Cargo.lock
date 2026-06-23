@@ -1346,6 +1346,8 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "svg-dom"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33c79316574e5594c0ba49560c6fee641b224f0e29a8cc262980b733ba9b7b92"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

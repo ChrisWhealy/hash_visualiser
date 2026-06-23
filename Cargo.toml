@@ -27,7 +27,8 @@ path = "src/main.rs"
 web = ["dep:wasm-bindgen"]
 
 [dependencies]
-svg-dom = { path = "../svg-dom" }
+# svg-dom = { path = "../svg-dom" }
+svg-dom = "0.1"
 wasm-bindgen = { version = "0.2", optional = true }
 
 # Markdown → HTML for node `description` properties (pure Rust, compiles to wasm and native).
