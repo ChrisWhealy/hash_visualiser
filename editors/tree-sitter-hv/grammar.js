@@ -25,6 +25,7 @@ module.exports = grammar({
       $.wire_declaration,
       $.group_declaration,
       $.layout_declaration,
+      $.import_declaration,
       $.data_declaration,
       $.event_handler,
     ),
@@ -91,6 +92,9 @@ module.exports = grammar({
     // - - - layout & groups - - -
     layout_declaration: $ => seq('layout', ':', field('direction', $.flow_direction)),
     flow_direction: _ => choice('left_to_right', 'top_to_bottom', 'right_to_left', 'bottom_to_top'),
+
+    // Bring another file's functions into scope; the string is the imported file's path (relative to the importer).
+    import_declaration: $ => seq('import', field('path', $.string)),
 
     group_declaration: $ => seq('group', field('name', $.identifier), '{', repeat($._group_item), '}'),
     _group_item: $ => choice($.contains_declaration, $.arrange_declaration),

@@ -132,8 +132,10 @@ pub fn diagram_size(graph: &ValidatedGraph) -> Size {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /// Translates a validated graph into live SVG elements under `svg`.
 ///
-/// Wires are created before nodes so that the node boxes paint on top of the connecting lines.
-pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
+/// Wires are created before nodes so that the node boxes paint on top of the connecting lines. `transport_id` is the
+/// element the step-button transport bar is drawn into (the main page uses `"transport"`; a modal overlay passes its
+/// own container so its controls don't leak into the page's bar).
+pub fn render(svg: &SvgRoot, graph: &ValidatedGraph, transport_id: &str) -> Result<Scene, Error> {
     // Discover the real monospace advance ("ch") for this font so all cell spacing derives from it, not a guess.
     let ch = measure_char(svg);
 
@@ -183,11 +185,12 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
     // feeds a `reduce` and so needs it; otherwise the bar is left empty and the page hides it (CSS `:empty`), so a
     // scalar function — which has nothing to step through — shows no empty transport footer at all.
     let transport = if grids.keys().any(|name| {
-        reduction_op(name, graph).is_some()
-            || comprehension_map(name, graph).is_some()
-            || nested_map(name, graph).is_some()
+        !feeds_imported_fn(name, graph)
+            && (reduction_op(name, graph).is_some()
+                || comprehension_map(name, graph).is_some()
+                || nested_map(name, graph).is_some())
     }) {
-        SvgRoot::create_in("transport", Size::new(TRANSPORT_W, TRANSPORT_H)).ok()
+        SvgRoot::create_in(transport_id, Size::new(TRANSPORT_W, TRANSPORT_H)).ok()
     } else {
         None
     };
@@ -210,7 +213,12 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
             grid_cells.insert(name.clone(), cells);
         } else {
             let group = render_node(svg, decl, *rect)?;
-            attach_description(svg, &group, decl, *rect)?;
+            // An operation box that applies an imported function is expandable (opens that file); otherwise it just
+            // gets its description toggle, if any.
+            match import_for_node(decl, graph) {
+                Some(path) => attach_expand(svg, &group, *rect, &path)?,
+                None => attach_description(svg, &group, decl, *rect)?,
+            }
             nodes.insert(name.clone(), group);
         }
     }
@@ -222,6 +230,14 @@ pub fn render(svg: &SvgRoot, graph: &ValidatedGraph) -> Result<Scene, Error> {
         };
         let (origin, grid_bottom) = grid_geom[name];
         let cells = grid_cells[name].clone();
+
+        // When this grid feeds an imported (expandable) operation, that operation's detail opens in a modal, so no
+        // inline step viz is drawn here — the grid only draws itself.
+        if feeds_imported_fn(name, graph) {
+            max_x = max_x.max(origin.x + spec.cell_w);
+            max_y = max_y.max(grid_bottom);
+            continue;
+        }
 
         // When the node feeds a `reduce`, visualise the inner fold below the grid; otherwise just the step buttons.
         let (mut ctrls, bottom_right) = match reduction_op(name, graph) {
@@ -677,6 +693,45 @@ fn compute_expr(decl: &NodeDecl) -> Option<&Expr> {
             PropValue::Expr(e) => Some(e),
             PropValue::Str(_) => None,
         })
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// If `decl`'s `compute` calls a function brought in by an `import`, returns that file's path — the node is then
+/// expandable: clicking it opens the imported file's own visualisation.
+fn import_for_node(decl: &NodeDecl, graph: &ValidatedGraph) -> Option<String> {
+    let Expr::Call { name, .. } = compute_expr(decl)? else {
+        return None;
+    };
+    graph.fn_imports.get(name).cloned()
+}
+
+/// Whether the grid node `name` feeds an operation that applies an IMPORTED function. Such an operation renders as an
+/// expandable box and its detail opens in a modal, so no inline step visualisation is drawn on this input grid.
+fn feeds_imported_fn(name: &str, graph: &ValidatedGraph) -> bool {
+    fed_function(name, graph).is_some_and(|f| graph.fn_imports.contains_key(&f.name))
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Marks an operation box as expandable: a `data-import` attribute (the page reads it to open the imported file's own
+/// visualisation in a modal on click) plus a corner affordance so it reads as clickable.
+fn attach_expand(svg: &SvgRoot, group: &SvgNode, rect: Rect, path: &str) -> Result<(), Error> {
+    group.set_attr("data-import", path)?;
+    group.set_attr("style", "cursor: pointer")?;
+
+    let badge = svg.text(
+        Point::new(
+            rect.top_left.x + rect.size.width - DESC_ICON_INSET,
+            rect.top_left.y + DESC_ICON_INSET,
+        ),
+        "\u{2922}", // ⤢ — diagonal expand arrows
+    )?;
+    badge.set_fill(LIGHT_BLACK)?;
+    badge.set_attr("text-anchor", "middle")?;
+    badge.set_attr("dominant-baseline", "central")?;
+    badge.set_attr("font-family", "sans-serif")?;
+    badge.set_attr("font-size", "14")?;
+    group.append(&badge)?;
+    Ok(())
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

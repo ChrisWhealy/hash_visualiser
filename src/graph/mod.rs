@@ -33,17 +33,53 @@ pub struct ValidatedGraph {
     pub layers: Vec<Vec<String>>,
     pub flow: FlowDirection,
     pub word_size: Option<u64>,
+    /// For each function brought in by an `import`, the literal import path of the file that defines it (e.g.
+    /// `ThetaC` → `"theta_c.hv"`). Lets the renderer mark a node whose `compute` calls an imported function as
+    /// expandable — clicking it opens that file's own visualisation.
+    pub fn_imports: HashMap<String, String>,
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Entry point
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+/// Validates a self-contained program (no `import`s to resolve). Equivalent to [`build_with_imports`] with no sources.
 pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
+    build_with_imports(program, &HashMap::new())
+}
+
+/// The import paths declared directly in `program` (not transitive). The client uses this to discover which files to
+/// fetch before building; it can then call this on each fetched file to walk the full dependency closure.
+pub fn imported_paths(program: &Program) -> Vec<String> {
+    program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            TopItem::Import(d) => Some(d.path.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Validates `program`, first pulling in the function definitions of every `import`ed file. `sources` maps an import
+/// path (relative to the `hv/` root) to that file's source text, and must already contain the transitive closure of
+/// imports (the caller — e.g. the browser client — fetches them). Only `fn` definitions are imported; the imported
+/// file's nodes/data/wires (its standalone demo) are ignored.
+pub fn build_with_imports(
+    program: &Program,
+    sources: &HashMap<String, String>,
+) -> Result<ValidatedGraph, Vec<GraphError>> {
     let mut errors: Vec<GraphError> = Vec::new();
     let mut nodes: HashMap<String, NodeDecl> = HashMap::new();
     let mut wires: Vec<WireDecl> = Vec::new();
     let mut named_wires: HashMap<String, WireDecl> = HashMap::new();
+
+    // Seed the function scope with the imported files' functions, then layer this file's own on top.
     let mut fn_defs: HashMap<String, FnDef> = HashMap::new();
+    let mut fn_imports: HashMap<String, String> = HashMap::new();
+    let mut in_progress: Vec<String> = Vec::new();
+    let mut done: HashSet<String> = HashSet::new();
+    collect_imports(program, sources, &mut fn_defs, &mut fn_imports, &mut in_progress, &mut done, &mut errors);
+
     let mut data: HashMap<String, Expr> = HashMap::new();
     let mut event_handlers: Vec<EventHandler> = Vec::new();
     let mut flow = FlowDirection::LeftToRight;
@@ -72,6 +108,8 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
                 &mut errors,
             ),
             TopItem::Layout(f) => flow = f.clone(),
+            // Imports are resolved up front (their functions already seeded into `fn_defs`); nothing more to do here.
+            TopItem::Import(_) => {}
             TopItem::EventHandler(e) => event_handlers.push(e.clone()),
             TopItem::Group(_) => {}
         }
@@ -122,6 +160,7 @@ pub fn build(program: &Program) -> Result<ValidatedGraph, Vec<GraphError>> {
             layers,
             flow,
             word_size,
+            fn_imports,
         }),
         Err(cycle) => {
             errors.push(GraphError::Cycle(cycle));
@@ -156,6 +195,71 @@ fn insert_wire(
 fn insert_fn(f: &FnDef, fn_defs: &mut HashMap<String, FnDef>, errors: &mut Vec<GraphError>) {
     if fn_defs.insert(f.name.clone(), f.clone()).is_some() {
         errors.push(GraphError::DuplicateFn(f.name.clone()));
+    }
+}
+
+/// Depth-first resolves the `import`s in `program`, merging each imported file's function definitions (its own `fn`s
+/// and any in its `context` block — but not its nodes/data) into `fn_defs`. `sources` supplies each import's text;
+/// `in_progress` is the DFS stack (for cycle detection) and `done` dedupes files imported by more than one path.
+fn collect_imports(
+    program: &Program,
+    sources: &HashMap<String, String>,
+    fn_defs: &mut HashMap<String, FnDef>,
+    fn_imports: &mut HashMap<String, String>,
+    in_progress: &mut Vec<String>,
+    done: &mut HashSet<String>,
+    errors: &mut Vec<GraphError>,
+) {
+    for item in &program.items {
+        let TopItem::Import(decl) = item else {
+            continue;
+        };
+        let path = &decl.path;
+
+        if in_progress.iter().any(|p| p == path) {
+            errors.push(GraphError::ImportCycle(path.clone()));
+            continue;
+        }
+        if done.contains(path) {
+            continue; // already merged via another import path
+        }
+
+        let Some(source) = sources.get(path) else {
+            errors.push(GraphError::UnresolvedImport(path.clone()));
+            continue;
+        };
+        let imported = match crate::parser::parse(source) {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(GraphError::ImportParse { path: path.clone(), message: e.to_string() });
+                continue;
+            }
+        };
+
+        in_progress.push(path.clone());
+        collect_imports(&imported, sources, fn_defs, fn_imports, in_progress, done, errors); // transitive first
+
+        // Merge this file's functions, recording that they came from `path` so the renderer can mark the nodes that
+        // call them as expandable.
+        let mut merge = |f: &FnDef, fn_defs: &mut HashMap<String, FnDef>| {
+            insert_fn(f, fn_defs, errors);
+            fn_imports.insert(f.name.clone(), path.clone());
+        };
+        for sub in &imported.items {
+            match sub {
+                TopItem::FnDef(f) => merge(f, fn_defs),
+                TopItem::Context(ctx) => {
+                    for ci in &ctx.items {
+                        if let ContextItem::FnDef(f) = ci {
+                            merge(f, fn_defs);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        in_progress.pop();
+        done.insert(path.clone());
     }
 }
 

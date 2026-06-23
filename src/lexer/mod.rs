@@ -320,6 +320,7 @@ fn keyword_or_ident(s: &str) -> Token {
         "group" => Token::Group,
         "hash" => Token::Hash,
         "horizontal" => Token::Horizontal,
+        "import" => Token::Import,
         "in" => Token::In,
         "label" => Token::Label,
         "layout" => Token::Layout,

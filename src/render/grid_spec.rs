@@ -1,6 +1,6 @@
 use super::{
-    CELL_GAP_CH, CELL_H_CH, GRID_LABEL_H_CH, cell_width, eval, format_digits, inferred_grid_shape, is_map_operation,
-    node_data_matrix, step_range,
+    CELL_GAP_CH, CELL_H_CH, GRID_LABEL_H_CH, cell_width, eval, format_digits, import_for_node, inferred_grid_shape,
+    is_map_operation, node_data_matrix, step_range,
 };
 use crate::{ast::ebnf_06::NodeDecl, graph::ValidatedGraph};
 
@@ -35,6 +35,12 @@ pub(crate) fn grid_spec(
     graph: &ValidatedGraph,
     ch: f64,
 ) -> Option<GridSpec> {
+    // A node whose `compute` applies an IMPORTED function renders as an expandable box (no value grid) — its inner
+    // workings live in that file and are reached by clicking to open it in a modal, not drawn inline here.
+    if import_for_node(decl, graph).is_some() {
+        return None;
+    }
+
     // The operation node that applies a map renders as a plain box; its output is shown by the map visualisation on
     // the input grid, so it must not also draw its own value grid.
     if is_map_operation(decl, graph) {

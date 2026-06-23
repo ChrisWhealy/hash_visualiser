@@ -39,3 +39,37 @@ fn should_render_a_one_dimensional_array_as_a_single_column() -> Result<(), Stri
     eq((spec.rows, spec.cols), (4, 1))?;
     eq(spec.values, Some(vec![vec![1], vec![2], vec![3], vec![4]]))
 }
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#[test]
+fn imported_operation_renders_as_a_box_and_data_as_tables() -> Result<(), String> {
+    // A node whose `compute` applies an IMPORTED function renders as a plain (expandable) box — its detail opens in a
+    // modal — while register/data nodes still show their values as tables. (This replaces the old `collapsed` flag:
+    // box-vs-inline is now derived from whether the function is imported.)
+    use crate::graph::build_with_imports;
+    use std::collections::HashMap;
+
+    let lib = "fn RowXor(a: [[u64; 2]; 2]) -> [u64; 2] = [ for x in 0..2 => reduce xor over a[x] ]";
+    let main = "
+        import \"lib.hv\"
+        data A = [[0x1, 0x2], [0x3, 0x4]]
+        node state : register  { format: hex64, source: A }
+        node c     : operation { symbol: \"RowXor\", compute: RowXor(state) }
+        node out   : register  { format: hex64, compute: c }
+        wire state -> c
+        wire c -> out
+    ";
+    let program = crate::parse(main).map_err(|e| e.to_string())?;
+    let sources: HashMap<String, String> = [("lib.hv".to_string(), lib.to_string())].into();
+    let g = build_with_imports(&program, &sources)
+        .map_err(|errs| errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;
+
+    // The operation applying the imported function is a box (no grid) ...
+    if grid_spec("c", &g.nodes["c"], &g, 7.5).is_some() {
+        return Err("an operation applying an imported function should render as a box, not a grid".into());
+    }
+    // ... while the input data and the register that mirrors the result stay tables.
+    grid_spec("state", &g.nodes["state"], &g, 7.5).ok_or("input data should still be a table")?;
+    grid_spec("out", &g.nodes["out"], &g, 7.5).ok_or("output register should still be a table")?;
+    Ok(())
+}

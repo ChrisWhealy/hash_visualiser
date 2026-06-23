@@ -13,6 +13,12 @@ pub enum GraphError {
     HandlerOnUndeclaredNode(String),
     Cycle(Vec<String>),
     FnCycle(Vec<String>),
+    /// `import "<path>"` could not be resolved — no source was supplied for that path.
+    UnresolvedImport(String),
+    /// An imported file failed to parse.
+    ImportParse { path: String, message: String },
+    /// Imports form a cycle (a file imports itself, directly or transitively).
+    ImportCycle(String),
 }
 
 impl std::fmt::Display for GraphError {
@@ -44,6 +50,12 @@ impl std::fmt::Display for GraphError {
                 write!(f, "cycle detected among nodes: {}", nodes.join(", ")),
             GraphError::FnCycle(fns) =>
                 write!(f, "cycle detected among functions: {}", fns.join(", ")),
+            GraphError::UnresolvedImport(path) =>
+                write!(f, "could not resolve import '{path}' (no source supplied)"),
+            GraphError::ImportParse { path, message } =>
+                write!(f, "failed to parse imported file '{path}': {message}"),
+            GraphError::ImportCycle(path) =>
+                write!(f, "import cycle detected at '{path}'"),
         }
     }
 }

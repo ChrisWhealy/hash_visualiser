@@ -1,0 +1,87 @@
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// SHA-3 (Keccak) — Theta, the whole step
+//
+// A pipeline overview combining the three individual Theta demos into one data flow:
+//
+//     theta_c.hv     C  = ThetaC(A)        column parities of the 5x5 state
+//     theta_d.hv     D  = ThetaD(C)        each column blended with its rotated neighbour
+//     theta_mix.hv   A' = ThetaXor(A, D)   D[x] XORed back into every lane of column x
+//
+// Each step is an IMPORTED function, so it renders as a plain box (a flowchart) — click a box to open that file's own
+// step-through visualisation in a modal. (A step whose function were defined locally would instead draw its workings
+// inline.)
+//
+// Note the shape: the original state A feeds BOTH ThetaC and the final ThetaXor, so A fans out to two steps. The state
+// values are the same as theta_c.hv, so the whole chain lines up with the standalone demos.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+context { word_size: 64 }
+
+layout: top_to_bottom
+
+// The three sub-functions are reused from the individual demos via `import` — no copied bodies. Each import brings that
+// file's `fn` definitions (ThetaC / ThetaD / ThetaXor) into scope so they can be called below.
+import "theta_c.hv"
+import "theta_d.hv"
+import "theta_mix.hv"
+
+// The 5x5 state A (identical to theta_c.hv's input).
+data A = [
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000 ],
+    [ 0x0000000000000000, 0x0000000000000000, 0xea27f99aae2990e9, 0x725d7fa6a3fc2f70, 0x67796880082353e4 ],
+    [ 0xe8c0284800b19533, 0xf3c1294f291c1bc8, 0xadea5a3b0abf3906, 0xa94ebb2f1bd3f309, 0xbb114511e928a5df ]
+]
+
+// Input: the 5x5 state, shown as a table.
+node state : register {
+    label: "State A",
+    format: hex64,
+    source: A,
+}
+
+// Step 1 — column parities C = ThetaC(A).
+node thetac : operation {
+    symbol: "ThetaC",
+    compute: ThetaC(state),
+    description: """
+# Theta-C — column parities
+
+`C[x] = A[x,0] XOR A[x,1] XOR A[x,2] XOR A[x,3] XOR A[x,4]`. See `theta_c.hv` for the fold visualisation.
+""",
+}
+
+// Step 2 — blend neighbouring parities D = ThetaD(C).
+node thetad : operation {
+    symbol: "ThetaD",
+    compute: ThetaD(thetac),
+    description: """
+# Theta-D — blend neighbouring parities
+
+`D[x] = C[x-1] XOR rotl(C[x+1], 1)` (indices wrap mod 5). See `theta_d.hv` for the per-element map visualisation.
+""",
+}
+
+// Step 3 — fold D back into the state A' = ThetaXor(A, D). Takes BOTH the original state and D.
+node thetax : operation {
+    symbol: "ThetaXOR",
+    compute: ThetaXor(state, thetad),
+    description: """
+# Theta mix — fold D back into the state
+
+`A'[x][y] = A[x][y] XOR D[x]`. See `theta_mix.hv` for the nested-loop visualisation.
+""",
+}
+
+// Output: the mixed 5x5 state A', shown as a table.
+node output : register {
+    label: "Theta(A) = A'",
+    format: hex64,
+    compute: thetax,
+}
+
+wire state  -> thetac
+wire thetac -> thetad
+wire state  -> thetax
+wire thetad -> thetax
+wire thetax -> output

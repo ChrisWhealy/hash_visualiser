@@ -41,6 +41,7 @@
   "data"
   "group"
   "layout"
+  "import"
   "on"
   "emit"
   "set"

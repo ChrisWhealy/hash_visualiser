@@ -73,6 +73,7 @@ LINE_COMMENT ::= "//" { char_except_newline } newline ;
    group
    hash
    horizontal
+   import
    in
    label
    layout
@@ -123,6 +124,7 @@ top_item ::= context_block
           |  wire_decl
           |  group_decl
           |  layout_decl
+          |  import_decl
           |  event_handler
           |  data_decl ;
 
@@ -312,6 +314,12 @@ layout_decl    ::= "layout" ":" flow_direction ;
 
 (* Sets the primary axis for topological layout.  Defaults to: left_to_right. *)
 flow_direction ::= "left_to_right"  | "top_to_bottom" |  "right_to_left"  | "bottom_to_top" ;
+
+(* Brings the function definitions of another .hv file into scope (so they can be called by a node's "compute"), without
+   copying their bodies.  STRING is the imported file's path, relative to the importing file's directory (".." allowed),
+   e.g. a file in hv/sha3/ uses "theta_c.hv" for its sibling.  An operation whose "compute" applies an imported function
+   renders as an expandable box (its inner workings open in a modal) rather than drawing them inline. *)
+import_decl    ::= "import" STRING ;
 
 
 (* =====================================================================================================================
